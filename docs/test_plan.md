@@ -99,11 +99,27 @@ it and stays resident for `pane_current_path` checks. Pane roles are read via th
 | 103–105| t19 `nudge` | a `listen`-mode worker receives `nudge T-x "hello world"` within 5 s (line lands in the worktree's `nudges.log`); `nudge` on a never-spawned/dead session dies. |
 | 106–109| t20 `abandon` | worktree removed, agent branch **kept** (work salvageable), task archived with `status=abandoned`. |
 
-Total: 109 assertions (68 slice-1 + 41 slice-2). Runtime ~8 s (well under the 120 s
-budget); verified non-flaky across repeated runs. Some slice-2 gate assertions (that
-expect a verb to *die*) also pass against a bare `die "not implemented"` stub, so a
-green line there is only meaningful against a real implementation; the positive
-assertions are the ones that turn red until the verbs land.
+### Slice-2 regression tests (added after adversarial validation — 5 NIT fixes)
+
+Each pins one hardening the validator asked for; all are fast (one re-uses the
+already-archived tasks from t17/t20, no fresh spawns). Each has teeth: it fails
+against the *un*-fixed behavior (e.g. `no such task` instead of the archive-aware
+message, two split panes instead of one, a `removed <blank>` receipt, a surface
+warning where the section is absent).
+
+| # (ok lines) | Group | Asserts |
+|---|---|---|
+| 110–111 | t21 concurrent watch (flock) | on a freshly-cleared deck, `watch T-x & watch T-x & wait` yields exactly **one** `@bench_role=diffpane` pane — the `flock` in `cmd_watch` (same lock as `task set`) stops two cold-start watches from each splitting a pane. |
+| 112–115 | t22 archive-aware lookups (`require_task`) | after a task is archived, `done` on a merged task, `nudge` on a merged task, and `resume` on an abandoned task each die naming the terminal state (`already merged/abandoned and archived`); a genuinely unknown id still gives `no such task`. |
+| 116–118 | t23 honest worktree receipt | `abandon` on a never-spawned task (empty `worktree`) exits 0 and its receipt says the worktree was `never spawned` — it does **not** claim it `removed` a blank path. |
+| 119–121 | t24 watch self-heal | with the `deck` window manually killed (session still alive), `watch T-x` exits 0 and the `deck` window exists again (`cmd_up` self-heal path). |
+| 122–124 | t25 legacy task file | a task file with its `## Expected files` section stripped makes `review` print `surface check skipped` and emit **no** `outside expected surface` warning (rather than flagging every changed file). |
+
+Total: 124 assertions (68 slice-1 + 41 slice-2 + 15 slice-2 regression). Runtime ~9 s
+(well under the 120 s budget); verified non-flaky across repeated runs. Some slice-2
+gate/regression assertions (that expect a verb to *die*) also pass against a bare
+`die "not implemented"` stub, so a green line there is only meaningful against a real
+implementation; the positive assertions are the ones that turn red until the verbs land.
 
 ## Interpretations (contract ambiguities resolved)
 
