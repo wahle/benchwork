@@ -6,6 +6,7 @@ BENCH_ROOT=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 . "$BENCH_ROOT/lib/state.sh"
 . "$BENCH_ROOT/lib/tmuxops.sh"
 . "$BENCH_ROOT/lib/review.sh"
+. "$BENCH_ROOT/lib/tools.sh"
 
 usage() {
   cat <<'EOF'
@@ -15,13 +16,16 @@ bench <verb> — agent workbench (slice 1)
   task new "title" [--files g]  create next T-###.md (status pending)
   task set <id> <key> <value>   atomic frontmatter write + state commit
   spawn <id>                    worktree + branch + claude worker session
-  status [--tmux|--json|--tree|--stale]   read-only state report
+  status [--tmux|--json|--tree|--stale|--refresh-titles]   read-only state report
   watch <id>                    point the deck diff pane at a task's worktree
+  peek <id> [-n 30]             tail of the worker's pane (human eyes only)
   review <id>                   diffstat + expected-files check (+ lazygit pane)
   done <id> [--yes]             squash-merge into base, archive, remove worktree
   abandon <id>                  archive as abandoned, remove worktree, keep branch
   nudge <id> "text"             send a line to the worker's pane
   resume <id>                   relaunch a dead worker session in its worktree
+  doctor                        check tools, tmux, state dir; actionable fixes
+  clean                         prune stale worktrees/branches/sessions (receipt)
 EOF
   exit "${1:-0}"
 }
@@ -33,6 +37,9 @@ case "$verb" in
   spawn)  cmd_spawn "$@" ;;
   status) cmd_status "$@" ;;
   watch)  cmd_watch "$@" ;;
+  peek)   cmd_peek "$@" ;;
+  doctor) cmd_doctor "$@" ;;
+  clean)  cmd_clean "$@" ;;
   review) cmd_review "$@" ;;
   done)   cmd_done "$@" ;;
   abandon) cmd_abandon "$@" ;;
