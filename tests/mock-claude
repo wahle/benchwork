@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# mock-claude — a `claude` CLI stand-in so bench tests never invoke a real model.
+#
+# bench spawn launches this exactly as it would launch claude:
+#     mock-claude --model <model> "<spawn prompt>"
+# with BENCH_TASK_ID / BENCH_TASKFILE / BENCH_PORT (and BENCH_HOME / BENCH_PROJECT /
+# BENCH_TMUX_SOCKET / PATH) exported inline by spawn, and cwd = the task worktree.
+#
+# It finds `bench` on PATH (spawn passes PATH through). Behaviour is selected by
+# a mode that resolves as:  $MOCK_MODE  >  `mockmode:` key in $BENCH_TASKFILE  >  default.
+# The frontmatter channel is what actually works end-to-end: `spawn` forwards
+# BENCH_TASKFILE (not an arbitrary env like MOCK_MODE) into the worker command, so
+# tests select behaviour by `bench task set <id> mockmode <mode>` before spawning.
+#   default : append a line to worker.txt, git-commit it, `bench task set <id>
+#             status review`, then sleep (keeps the tmux session alive for liveness
+#             and --tree `alive` checks).
+#   block   : `bench task set <id> question ...` + status blocked, then sleep.
+#   idle    : sleep only — no commit, no status change (drives stale detection).
+#   listen  : `read -r` one line from stdin (a `bench nudge` send-keys lands there),
+#             append it to nudges.log in cwd (the worktree), then sleep. Lets the
+#             nudge test observe delivery.
+#
+# `resume` launches this as `<env> mock-claude --continue` (no --model) — accepted
+# below and dispatched by MOCK_MODE the same as a fresh launch.
+#
+# The trailing sleep mimics a real worker session that stays resident after its turn.
+
+id=${BENCH_TASK_ID:-}
+
+mode=${MOCK_MODE:-}
+if [ -z "$mode" ] && [ -n "${BENCH_TASKFILE:-}" ] && [ -f "${BENCH_TASKFILE}" ]; then
+  mode=$(sed -n 's/^mockmode: *//p' "$BENCH_TASKFILE" | head -n1)
+fi
+mode=${mode:-default}
+
+# Consume the args bench passes; we only need the env. --model is accepted+ignored.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --model)    shift 2 || shift ;;
+    --continue) shift ;;             # resume path: no --model; mode still from MOCK_MODE/taskfile
+    *)          shift ;;
+  esac
+done
+
+log() { printf '[mock-claude %s] %s\n' "${id:-?}" "$*"; }
+
+# spawn launches this worker (contract step 5) and only then flips status to
+# `working` (step 7). A real claude session is seconds slow, so that flip always
+# lands first; this fast mock would otherwise race it and get its own status
+# write clobbered. Wait for `working` to appear before mutating status.
+wait_working() {
+  [ -n "${BENCH_TASKFILE:-}" ] && [ -f "$BENCH_TASKFILE" ] || return 0
+  local n=0
+  while [ "$n" -lt 50 ]; do
+    [ "$(sed -n 's/^status: *//p' "$BENCH_TASKFILE" | head -n1)" = working ] && return 0
+    sleep 0.1; n=$((n + 1))
+  done
+}
+
+commit_work() {
+  # -c identity keeps the commit working even when the worktree env carries no
+  # git identity (spawn does not forward GIT_AUTHOR_*/GIT_COMMITTER_*).
+  git -c user.email=mock@bench.test -c user.name=mock-claude add -A 2>/dev/null || true
+  git -c user.email=mock@bench.test -c user.name=mock-claude \
+      commit -qm "worker ${id}: checkpoint" 2>/dev/null || log "commit skipped"
+}
+
+case "$mode" in
+  idle)
+    log "idle: no commit, no status change"
+    ;;
+  block)
+    wait_working
+    bench task set "$id" question "need input" || log "bench question failed"
+    bench task set "$id" status blocked      || log "bench status blocked failed"
+    log "blocked: awaiting input"
+    ;;
+  listen)
+    # `bench nudge` types a line + Enter onto this pane's stdin; record it in cwd
+    # (the worktree) so the nudge test can observe delivery. No status change.
+    IFS= read -r line || true
+    printf '%s\n' "${line:-}" >> nudges.log
+    log "listen: recorded a nudged line"
+    ;;
+  *)
+    wait_working
+    printf 'worker %s ran at %s\n' "$id" "$(date -u +%FT%TZ)" >> worker.txt
+    commit_work
+    bench task set "$id" status review || log "bench status review failed"
+    log "default: acceptance met, status review"
+    ;;
+esac
+
+# Stay resident like a real claude session so `alive` / liveness checks see it.
+sleep 300

@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# bench — a talk-driven agent workbench on tmux (slice 1: spawn pipeline)
+set -euo pipefail
+BENCH_ROOT=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+. "$BENCH_ROOT/lib/common.sh"
+. "$BENCH_ROOT/lib/state.sh"
+. "$BENCH_ROOT/lib/tmuxops.sh"
+. "$BENCH_ROOT/lib/review.sh"
+
+usage() {
+  cat <<'EOF'
+bench <verb> — agent workbench (slice 1)
+  init                          create + git-init the project state dir
+  up                            create-or-repair tmux session (idempotent)
+  task new "title" [--files g]  create next T-###.md (status pending)
+  task set <id> <key> <value>   atomic frontmatter write + state commit
+  spawn <id>                    worktree + branch + claude worker session
+  status [--tmux|--json|--tree|--stale]   read-only state report
+  watch <id>                    point the deck diff pane at a task's worktree
+  review <id>                   diffstat + expected-files check (+ lazygit pane)
+  done <id> [--yes]             squash-merge into base, archive, remove worktree
+  abandon <id>                  archive as abandoned, remove worktree, keep branch
+  nudge <id> "text"             send a line to the worker's pane
+  resume <id>                   relaunch a dead worker session in its worktree
+EOF
+  exit "${1:-0}"
+}
+
+verb=${1:-help}; shift || true
+case "$verb" in
+  init)   cmd_init "$@" ;;
+  up)     cmd_up "$@" ;;
+  spawn)  cmd_spawn "$@" ;;
+  status) cmd_status "$@" ;;
+  watch)  cmd_watch "$@" ;;
+  review) cmd_review "$@" ;;
+  done)   cmd_done "$@" ;;
+  abandon) cmd_abandon "$@" ;;
+  nudge)  cmd_nudge "$@" ;;
+  resume) cmd_resume "$@" ;;
+  task)
+    sub=${1:-}; shift || true
+    case "$sub" in
+      new) cmd_task_new "$@" ;;
+      set) cmd_task_set "$@" ;;
+      *)   usage 1 ;;
+    esac ;;
+  help|-h|--help) usage ;;
+  *) echo "bench: unknown verb '$verb'" >&2; usage 1 ;;
+esac
