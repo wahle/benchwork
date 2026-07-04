@@ -64,6 +64,21 @@ require_task() { # require_task <id> — print the task file path; die archive-a
   die "no such task: $id — run 'bench status' to see the current tasks"
 }
 
+tmux_ge34() { # 0 iff the running tmux is >= 3.4 (status-line click ranges land in 3.4)
+  # Non-numeric build tags ("next-3.5") count as >= 3.4; integer maj/min compare so a
+  # hypothetical 3.10 doesn't lose to 3.4 the way a float compare would.
+  local raw v maj min
+  raw=$(btmux -V 2>/dev/null | awk '{print $2}') || true
+  [ -n "$raw" ] || return 1
+  v=${raw%%[!0-9.]*}                 # "3.4a"->"3.4"; "next-3.5"->"" (leading non-digit)
+  [ -n "$v" ] || return 0            # unparseable tag: assume modern
+  maj=${v%%.*}
+  case "$v" in *.*) min=${v#*.}; min=${min%%.*} ;; *) min=0 ;; esac
+  [ "${maj:-0}" -gt 3 ] && return 0
+  { [ "${maj:-0}" -eq 3 ] && [ "${min:-0}" -ge 4 ]; } && return 0
+  return 1
+}
+
 task_globs() { # task_globs <taskfile> — globs from '## Expected files' (inline comments stripped)
   awk '/^## Expected files/{f=1;next} /^## /{f=0} f&&/^- /{sub(/^- +/,"");sub(/[ \t].*/,"");print}' "$1"
 }

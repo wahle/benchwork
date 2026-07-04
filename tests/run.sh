@@ -36,6 +36,7 @@ tmuxs() { command tmux -L "$BENCH_TMUX_SOCKET" "$@"; }
 cleanup() {
   cd / 2>/dev/null || true
   tmuxs kill-server 2>/dev/null || true
+  command tmux -L "conflint$$" kill-server 2>/dev/null || true   # t26's throwaway conf-lint server
   rm -f "${TMUX_TMPDIR:-/tmp/tmux-$(id -u)}/$BENCH_TMUX_SOCKET" 2>/dev/null || true  # dead socket inode
   git -C "$FIX" worktree prune 2>/dev/null || true
   rm -rf "$WORK" 2>/dev/null || true
@@ -583,6 +584,192 @@ l25=$(bench review "$lgid" 2>&1); report "t25 review exits 0 on a legacy task fi
 grep -q 'surface check skipped' <<<"$l25"; report "t25 review notes the surface check was skipped" $?
 rc=0; grep -q 'outside expected surface' <<<"$l25" && rc=1
 report "t25 no surface warning emitted without an Expected files section" "$rc" "out=[$l25]"
+
+# =====================================================================
+# Slice 3 — polish: tmux UX, needs-input, peek/doctor/clean (t26–t33).
+# Asserts docs/slice3_contract.md §A/§B/§C. These target lib/state.sh,
+# lib/tools.sh, and bench.tmux.conf, which sibling agents are implementing in
+# this same working tree — against their stubs the positive assertions here
+# report `not ok` (the intended red signal) and go green as the code lands.
+# The project session is $SESS=fixture; worker sessions are bench-fixture-<id>.
+# =====================================================================
+
+# --- t26: bench.tmux.conf parses clean on a THROWAWAY server (own socket) ---
+# Must use `command tmux` (not btmux/tmuxs — those are the harness socket) with a
+# private `conflint$$` server so a config parse error can't taint the test run; the
+# EXIT trap also kills this server. `start-server \; kill-server` loads + tears down.
+conflint_err=$(command tmux -f "$REPO/bench.tmux.conf" -L "conflint$$" start-server \; kill-server 2>&1 >/dev/null)
+conflint_rc=$?
+rc=0; { [ "$conflint_rc" -eq 0 ] && [ -z "$conflint_err" ]; } || rc=1
+report "t26 bench.tmux.conf parses clean (exit 0, empty stderr)" "$rc" "rc=$conflint_rc stderr=[$conflint_err]"
+
+# --- t27: Acceptance 3 — bell fires on a working→blocked transition ---
+# A `status --tmux` run that observes a task newly blocked (no cache line, or a
+# working→blocked change) must ring the crew window's bell. Reset semantics proven
+# on this tmux 3.4 build: writing BEL to a pane tty sets #{window_bell_flag}=1 even
+# detached; `select-window` on the crew window clears it back to 0. So we clear the
+# flag, leave crew UN-selected (deck current) so a fresh bell can re-set it, then run.
+mk_task "bell-block"; blid=$NEWID
+bench task set "$blid" mockmode block >/dev/null 2>&1
+bench up >/dev/null 2>&1                                  # ensure deck + crew windows exist
+bench spawn "$blid" >/dev/null 2>&1
+rc=0; poll_status "$blid" blocked 15 || rc=1
+report "t27 block-mode worker reaches status=blocked" "$rc" "status=$(task_status "$blid")"
+tmuxs select-window -t "=$SESS:crew" 2>/dev/null || true  # clear any stale bell flag
+tmuxs select-window -t "=$SESS:deck" 2>/dev/null || true  # crew now unselected: a bell will register
+tmout27=$(bench status --tmux 2>/dev/null)                # uncached blocked task → must bell crew
+bell1=$(tmuxs display-message -p -t "=$SESS:crew" '#{window_bell_flag}' 2>/dev/null)
+rc=0; [ "$bell1" = 1 ] || rc=1
+report "t27 crew window bell fires when a task goes blocked" "$rc" "window_bell_flag=$bell1"
+rc=0; grep -q "fg=yellow]$blid" <<<"$tmout27" || rc=1
+report "t27 blocked task chip is rendered yellow" "$rc" "chip=[$(grep -oE "fg=[^]]*]$blid [^#]*" <<<"$tmout27")]"
+tmuxs select-window -t "=$SESS:crew" 2>/dev/null || true  # reset flag to 0 again
+tmuxs select-window -t "=$SESS:deck" 2>/dev/null || true
+bench status --tmux >/dev/null 2>&1                       # still blocked, now cached → must NOT re-bell
+bell2=$(tmuxs display-message -p -t "=$SESS:crew" '#{window_bell_flag}' 2>/dev/null)
+rc=0; [ "$bell2" = 0 ] || rc=1
+report "t27 a second --tmux on a still-blocked task does not re-bell" "$rc" "window_bell_flag=$bell2"
+
+# --- t28: Acceptance 11 — needs-input flagged for a prompt-parked worker ---
+# BENCH_SILENCE_SECS=2 shrinks both the spawn's monitor-silence value AND status's
+# fresh-commit window; export it for the spawn AND the status calls (contract).
+export BENCH_SILENCE_SECS=2
+mk_task "needs-prompt"; npid=$NEWID
+bench task set "$npid" mockmode prompt >/dev/null 2>&1
+bench spawn "$npid" >/dev/null 2>&1
+ni=""; rc=1; nend=$(( $(date +%s) + 15 ))                 # silence trips at ~2s; poll up to 15s
+while [ "$(date +%s)" -lt "$nend" ]; do
+  ni=$(bench status --json 2>/dev/null | jq -r --arg id "$npid" '.[]|select(.id==$id)|.needs_input' 2>/dev/null)
+  [ "$ni" = true ] && { rc=0; break; }
+  sleep 0.5
+done
+report "t28 prompt-parked worker flagged needs_input within 15s" "$rc" "needs_input=$ni"
+tmc28=$(bench status --tmux 2>/dev/null)
+rc=0; grep -q "colour208]$npid" <<<"$tmc28" || rc=1
+report "t28 --tmux chip for the flagged task is orange (colour208)" "$rc" "line=[$(grep -oE "colour208]$npid [^#]*" <<<"$tmc28")]"
+rc=0; grep -qE "colour208]$npid !" <<<"$tmc28" || rc=1     # ! = capture-pane confirmed (prompt signature)
+report "t28 --tmux chip shows the confirmed needs-input glyph (!)" "$rc"
+# --json needs_input key: extend the t8-style key/type check.
+json28=$(bench status --json 2>/dev/null)
+jq -e '.[0]|has("needs_input")' >/dev/null 2>&1 <<<"$json28"; rc=$?
+report "t28 --json objects carry a needs_input key" "$rc"
+jq -e '.[0].needs_input|type=="boolean"' >/dev/null 2>&1 <<<"$json28"; rc=$?
+report "t28 --json needs_input is a boolean" "$rc"
+# Negative: a fresh idle worker at the DEFAULT silence window is not flagged.
+unset BENCH_SILENCE_SECS                                   # spawn below gets monitor-silence 60
+mk_task "fresh-idle"; fiid=$NEWID
+bench task set "$fiid" mockmode idle >/dev/null 2>&1
+bench spawn "$fiid" >/dev/null 2>&1
+ni2=$(bench status --json 2>/dev/null | jq -r --arg id "$fiid" '.[]|select(.id==$id)|.needs_input' 2>/dev/null)
+rc=0; [ "$ni2" = false ] || rc=1                           # checked immediately, well inside the 60s window
+report "t28 fresh idle worker is needs_input==false at the default silence window" "$rc" "needs_input=$ni2"
+
+# --- t29: status --refresh-titles retitles worker panes ---
+mk_task "retitle"; rtid=$NEWID
+bench task set "$rtid" mockmode idle >/dev/null 2>&1
+bench spawn "$rtid" >/dev/null 2>&1
+for _ in $(seq 1 25); do tmuxs has-session -t "=bench-fixture-$rtid" 2>/dev/null && break; sleep 0.2; done
+bench task set "$rtid" status review >/dev/null 2>&1
+rtout=$(bench status --refresh-titles 2>/dev/null)
+grep -qE 'retitled [0-9]+ worker pane' <<<"$rtout"; report "t29 --refresh-titles prints a receipt naming the count" $?
+rttitle=$(tmuxs display-message -p -t "=bench-fixture-$rtid:" '#{pane_title}' 2>/dev/null)
+rc=0; [ "$rttitle" = "$rtid · review" ] || rc=1
+report "t29 worker pane title set to '<id> · <status>'" "$rc" "title=[$rttitle]"
+comb=$(bench status --tmux --refresh-titles 2>/dev/null)
+rc=0; [ "$(printf '%s\n' "$comb" | wc -l)" -eq 1 ] || rc=1
+report "t29 combined --tmux --refresh-titles stays a single chip line" "$rc" "lines=$(printf '%s\n' "$comb" | wc -l)"
+
+# --- t30: peek tails the worker pane (human eyes only) ---
+mk_task "peek-me"; pkid=$NEWID
+bench task set "$pkid" mockmode prompt >/dev/null 2>&1
+bench spawn "$pkid" >/dev/null 2>&1
+rc=1; pend=$(( $(date +%s) + 10 ))                        # wait for the pane to render the prompt text
+while [ "$(date +%s)" -lt "$pend" ]; do
+  bench peek "$pkid" 2>/dev/null | grep -q 'Do you want' && { rc=0; break; }
+  sleep 0.3
+done
+report "t30 peek surfaces the worker's prompt text ('Do you want')" "$rc"
+pk5=$(bench peek "$pkid" -n 5 2>/dev/null)                # -n may precede or follow the id
+rc=0; [ "$(printf '%s\n' "$pk5" | wc -l)" -le 6 ] || rc=1  # header + <=5 content lines
+report "t30 peek -n 5 bounds output to a header + <=5 lines" "$rc" "lines=$(printf '%s\n' "$pk5" | wc -l)"
+grep -q "$pkid" <<<"$pk5"; report "t30 peek prints a header naming the task" $?
+mk_task "peek-dead"; pdid=$NEWID
+bench task set "$pdid" mockmode idle >/dev/null 2>&1
+bench spawn "$pdid" >/dev/null 2>&1
+for _ in $(seq 1 25); do tmuxs has-session -t "=bench-fixture-$pdid" 2>/dev/null && break; sleep 0.2; done
+tmuxs kill-session -t "=bench-fixture-$pdid" 2>/dev/null || true
+pderr=$(bench peek "$pdid" 2>&1); rc=$?
+rc2=0; [ "$rc" -ne 0 ] || rc2=1; report "t30 peek on a dead worker session dies" "$rc2"
+grep -q 'bench resume' <<<"$pderr"; report "t30 peek dead-session error names 'bench resume'" $?
+
+# --- t31: doctor — diagnostics, exit 0 unless a hard tool/state FAIL (test 10) ---
+gout=$(bench doctor 2>&1); grc=$?
+rc=0; [ "$grc" -eq 0 ] || rc=1
+report "t31 doctor exits 0 on a healthy (warns-only) workbench" "$rc" "rc=$grc out=[$(grep -iE '^fail' <<<"$gout" | tr '\n' ';')]"
+# Hide diffpane: strip the t15 shim dir, ~/.local/bin, and any dir still holding a
+# diffpane, so `doctor` sees it missing while tmux/git/bench still resolve.
+filt=""; IFS=: read -ra _pdirs <<<"$PATH"
+for _d in "${_pdirs[@]}"; do
+  case "$_d" in "$WORK/shimbin"|"$HOME/.local/bin") continue ;; esac
+  [ -x "$_d/diffpane" ] && continue
+  filt="${filt:+$filt:}$_d"
+done
+dout=$(PATH="$filt" bench doctor 2>&1); drc=$?
+rc=0; [ "$drc" -eq 0 ] || rc=1
+report "t31 doctor with diffpane missing still exits 0 (acceptance 10)" "$rc" "rc=$drc"
+dline=$(grep -i diffpane <<<"$dout" | head -1)
+rc=0; grep -qi 'warn' <<<"$dline" || rc=1
+report "t31 missing diffpane is a warn, not a hard fail" "$rc" "line=[$dline]"
+rc=0; grep -q '—' <<<"$dline" || rc=1                     # doctor appends ' — <next command>' to warn/FAIL lines
+report "t31 missing-diffpane line carries an actionable next step" "$rc" "line=[$dline]"
+rc=0; { grep -qiE '(^|[^a-z])tmux' <<<"$dout" && grep -qiE '(^|[^a-z])git' <<<"$dout"; } || rc=1
+report "t31 doctor still runs the other tool checks (tmux + git lines present)" "$rc"
+# Uninitialized project: no state dir → hard FAIL, exit 1, name `bench init`.
+FRESH="$WORK/fresh-doctor"; mkdir -p "$FRESH"
+git -C "$FRESH" init -qb main
+git -C "$FRESH" config user.email test@bench.test; git -C "$FRESH" config user.name bench-test
+( cd "$FRESH" && bench doctor ) >"$WORK/fd.out" 2>&1; frc=$?
+rc2=0; [ "$frc" -ne 0 ] || rc2=1; report "t31 doctor before init exits nonzero" "$rc2" "rc=$frc"
+grep -q 'bench init' "$WORK/fd.out"; report "t31 uninitialized doctor names 'bench init'" $?
+
+# --- t32: clean prunes crashed-mid-done leftovers; abandoned branches survive ---
+mk_task "orphan-clean"; ocid=$NEWID
+bench task set "$ocid" mockmode idle >/dev/null 2>&1
+bench spawn "$ocid" >/dev/null 2>&1
+for _ in $(seq 1 25); do tmuxs has-session -t "=bench-fixture-$ocid" 2>/dev/null && break; sleep 0.2; done
+ocwt="$(wt_of "$ocid")"
+# Simulate a crash after `done` merged+archived but before it cleaned up: kill the
+# session, move the task to archive/ as merged — the worktree + agent branch linger.
+tmuxs kill-session -t "=bench-fixture-$ocid" 2>/dev/null || true
+mv "$SD/tasks/$ocid.md" "$SD/archive/$ocid.md"
+fm_set "$SD/archive/$ocid.md" status merged
+fm_set "$SD/archive/$ocid.md" updated "$(now_iso)"
+# A fresh abandoned task whose branch must SURVIVE clean (salvage rule).
+mk_task "clean-keep-abandoned"; ckid=$NEWID
+bench task set "$ckid" mockmode idle >/dev/null 2>&1
+bench spawn "$ckid" >/dev/null 2>&1
+for _ in $(seq 1 25); do tmuxs has-session -t "=bench-fixture-$ckid" 2>/dev/null && break; sleep 0.2; done
+bench abandon "$ckid" >/dev/null 2>&1                     # archived abandoned; worktree gone; branch kept
+rc=0; [ -d "$ocwt" ] || rc=1; report "t32 orphan worktree exists before clean (precondition)" "$rc" "wt=$ocwt"
+git -C "$FIX" show-ref -q --verify "refs/heads/agent/$ocid"; report "t32 orphan agent branch exists before clean (precondition)" $?
+clout=$(bench clean 2>&1); report "t32 clean exits 0" $?
+rc=0; [ ! -d "$ocwt" ] || rc=1; report "t32 clean removed the orphan worktree" "$rc" "still: $ocwt"
+rc=0; git -C "$FIX" worktree list 2>/dev/null | grep -q "$ocid" && rc=1
+report "t32 orphan worktree unregistered in git" "$rc"
+rc=0; git -C "$FIX" show-ref -q --verify "refs/heads/agent/$ocid" && rc=1
+report "t32 clean deleted the merged task's agent branch" "$rc"
+rc=0; { grep -qiE 'worktree|worker' <<<"$clout" && grep -qi 'branch' <<<"$clout"; } || rc=1
+report "t32 clean receipt names both the worktree and the branch" "$rc" "out=[$clout]"
+grep -q "$ocid" <<<"$clout"; report "t32 clean receipt names the pruned task id" $?
+rc=0; git -C "$FIX" show-ref -q --verify "refs/heads/agent/$ckid" || rc=1
+report "t32 an abandoned task's branch survives clean (salvage rule)" "$rc"
+cl2=$(bench clean 2>&1)
+grep -q 'nothing to clean' <<<"$cl2"; report "t32 a second clean reports nothing to clean" $?
+
+# --- t33: --tmux wraps chips in click ranges (this tmux IS 3.4) ---
+tmr=$(bench status --tmux 2>/dev/null)
+grep -qF '#[range=user|task_T-' <<<"$tmr"; report "t33 --tmux wraps chips in #[range=user|task_<id>]" $?
+grep -qF '#[norange]' <<<"$tmr"; report "t33 --tmux closes each chip range with #[norange]" $?
 
 # ---- summary ----
 printf '1..%d\n' "$TESTNUM"

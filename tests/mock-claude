@@ -82,6 +82,27 @@ case "$mode" in
     printf '%s\n' "${line:-}" >> nudges.log
     log "listen: recorded a nudged line"
     ;;
+  prompt)
+    # A worker parked at an interactive permission prompt (slice 3 needs-input, §5).
+    # Mutates NOTHING — no commit, no status change — so status stays `working` (the
+    # flip spawn does in step 7), which is the needs-input gate's precondition. Prints
+    # a permission-prompt lookalike whose text matches the layer-3 confidence
+    # signatures (`Do you want`, numbered options, `❯`) so `capture-pane` sniffing
+    # upgrades the chip to `!`, then blocks on `read -r` — the pane stays silent and
+    # resident, tripping monitor-silence and staying capturable for `peek`.
+    log "prompt: printing permission-prompt lookalike, then blocking on read"
+    # Real claude renders a full-height TUI with the permission prompt near the
+    # BOTTOM of the pane. bench's layer-3 confirmation reads `capture-pane -p |
+    # tail -n 15`, so the signature must land in the last ~15 rows — a top-of-pane
+    # print sits ABOVE that window (blank grid rows below the cursor fill it) and is
+    # never matched. Pad with newlines to scroll the lookalike down to the bottom.
+    printf '\n%.0s' {1..50}
+    printf 'Do you want to allow this tool call?\n'
+    printf '  1. Yes\n'
+    printf '  2. No\n'
+    printf '❯ '
+    IFS= read -r _ || true
+    ;;
   *)
     wait_working
     printf 'worker %s ran at %s\n' "$id" "$(date -u +%FT%TZ)" >> worker.txt

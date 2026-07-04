@@ -8,7 +8,8 @@
 
 # cmd_up: idempotent create-or-repair of the navigator surface ONLY (Appendix B rule 4).
 cmd_up() {
-  local sess; sess=$(tmux_safe "$(project_name)")   # dots/colons/spaces break tmux names/targets
+  local sess repo; sess=$(tmux_safe "$(project_name)")   # dots/colons/spaces break tmux names/targets
+  repo=$(conf_get repo); repo=${repo:-$(repo_root)}
   if btmux has-session -t "=$sess" 2>/dev/null; then
     btmux list-windows -t "=$sess" -F '#{window_name}' | grep -qx deck || btmux new-window -d -t "=$sess" -n deck
     btmux list-windows -t "=$sess" -F '#{window_name}' | grep -qx crew || btmux new-window -d -t "=$sess" -n crew
@@ -17,6 +18,11 @@ cmd_up() {
     btmux new-window -d -t "=$sess" -n crew
   fi
   btmux set -g mouse on >/dev/null
+  # Per-session option the conf reads: status segments + click binds cd here before running
+  # bench (tmux #() has no repo cwd). Session-scoped so non-bench sessions render empty.
+  # A session option, so it never appears in list-windows — up's byte-identical idempotence holds.
+  # NB: set-option's -t rejects the '=' exact-match prefix (unlike has-session), so pass the bare name.
+  btmux set-option -t "$sess" @bench_repo "$repo" >/dev/null 2>&1 || true
   echo "bench: session '$sess' ready — attach with: tmux attach -t $sess"
 }
 
@@ -49,6 +55,10 @@ _tx_launch() {
   [ -n "${BENCH_TMUX_SOCKET:-}" ] && env="$env BENCH_TMUX_SOCKET=$(printf %q "$BENCH_TMUX_SOCKET")"
 
   btmux new-session -d -s "$sess" -c "$wt" "$env $cmdtail" || return 1
+
+  # Needs-input layer 2 (spec §5): mark the worker window silent after this many seconds
+  # with no output. status --tmux reads #{window_silence_flag}; advisory only, never state.
+  btmux set-option -w -t "=$sess:" monitor-silence "${BENCH_SILENCE_SECS:-60}" 2>/dev/null || true
 
   # These reach later shells opened in the session (the running worker already has env inline).
   for kv in BENCH_TASK_ID="$id" BENCH_TASKFILE="$tf" BENCH_PORT="$port"; do
