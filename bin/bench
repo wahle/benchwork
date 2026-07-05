@@ -17,7 +17,9 @@ bench <verb> — a talk-driven agent workbench on tmux + git
   task set <id> <key> <value>   atomic frontmatter write + state commit
   spawn <id>                    worktree + branch + claude worker session
   status [--tmux|--json|--tree|--stale|--refresh-titles]   read-only state report
-  watch <id>                    point the deck diff pane at a task's worktree
+  watch <id> [--tui]            point the deck diff pane at a task's worktree
+  embed <id>|--all              tile live worker session(s) into the crew window
+  pop <id>                      remove a worker's crew tile (session keeps running)
   peek <id> [-n 30]             tail of the worker's pane (human eyes only)
   panel                         fzf task palette (Alt+g): jump/watch/peek
   review <id>                   diffstat + expected-files check (+ lazygit pane)
@@ -38,6 +40,8 @@ case "$verb" in
   spawn)  cmd_spawn "$@" ;;
   status) cmd_status "$@" ;;
   watch)  cmd_watch "$@" ;;
+  embed)  cmd_embed "$@" ;;
+  pop)    cmd_pop "$@" ;;
   peek)   cmd_peek "$@" ;;
   panel)  cmd_panel "$@" ;;
   doctor) cmd_doctor "$@" ;;

@@ -822,6 +822,29 @@ rc2=0; [ "$rc" -ne 0 ] || rc2=1; report "t36 panel outside tmux dies" "$rc2"
 grep -qi 'inside tmux' <<<"$p36"; report "t36 panel names the fix (attach to tmux first)" $?
 bench help 2>&1 | grep -q 'panel'; report "t36 usage lists the panel verb" $?
 
+# --- t37: embed/pop — crew tiles are VIEWS; popping one never kills the worker ---
+view_pane() { tmuxs list-panes -t "=$SESS:crew" -F '#{pane_id} #{@bench_view}' 2>/dev/null | awk -v w="$1" '$2==w{print $1; exit}'; }
+mk_task "embed-me"; emid=$NEWID
+bench task set "$emid" mockmode idle >/dev/null 2>&1
+bench spawn "$emid" >/dev/null 2>&1
+for _ in $(seq 1 25); do tmuxs has-session -t "=bench-fixture-$emid" 2>/dev/null && break; sleep 0.2; done
+bench embed "$emid" >/dev/null 2>&1; report "t37 embed exits 0 on a live worker" $?
+rc=1; for _ in $(seq 1 25); do [ -n "$(view_pane "bench-fixture-$emid")" ] && { rc=0; break; }; sleep 0.2; done
+report "t37 crew gains a tile tagged @bench_view=<worker session>" "$rc"
+em2=$(bench embed "$emid" 2>&1)
+grep -q 'already' <<<"$em2"; report "t37 second embed is an idempotent no-op" $?
+rc=0; [ "$(tmuxs list-panes -t "=$SESS:crew" -F '#{@bench_view}' 2>/dev/null | grep -cx "bench-fixture-$emid")" -eq 1 ] || rc=1
+report "t37 exactly one tile per worker" "$rc"
+bench pop "$emid" >/dev/null 2>&1; report "t37 pop exits 0" $?
+rc=0; [ -z "$(view_pane "bench-fixture-$emid")" ] || rc=1; report "t37 pop removed the crew tile" "$rc"
+t "t37 worker session STILL ALIVE after pop (views never own sessions)" \
+  tmuxs has-session -t "=bench-fixture-$emid"
+bench pop "$emid" >/dev/null 2>&1; rc=$?
+rc2=0; [ "$rc" -ne 0 ] || rc2=1; report "t37 pop with no tile dies naming 'bench embed'" "$rc2"
+mk_task "never-embed"; neid=$NEWID
+bench embed "$neid" >/dev/null 2>&1; rc=$?
+rc2=0; [ "$rc" -ne 0 ] || rc2=1; report "t37 embed on a never-spawned task dies with spawn/resume hint" "$rc2"
+
 # ---- summary ----
 printf '1..%d\n' "$TESTNUM"
 printf '# passed %d, failed %d\n' "$((TESTNUM - FAILS))" "$FAILS"

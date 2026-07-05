@@ -168,6 +168,72 @@ cmd_watch() {
   echo "bench: deck diff pane now follows $wt ($id) — $how"
 }
 
+# ── embed / pop: project worker sessions into the crew window as live tiles (Appendix B
+# rule 3: panes are VIEWS of sessions). Each tile is a nested tmux client attached to the
+# worker's session — fully interactive (type in the tile = type at the worker), and killing
+# the tile only detaches a client; the worker session is never owned by its view.
+# (join-pane would MOVE the pane and kill the worker's session identity — never that.)
+
+# _tx_view_pane <proj-sess> <worker-sess> — pane id of the crew tile viewing that worker, if any.
+_tx_view_pane() {
+  btmux list-panes -t "=$1:crew" -F '#{pane_id} #{@bench_view}' 2>/dev/null \
+    | awk -v w="$2" '$2 == w { print $1; exit }'
+}
+
+# cmd_embed <id>|--all — tile live worker session(s) into crew. Idempotent per worker.
+cmd_embed() {
+  local sess proj ids=() id wsess attach pane f
+  proj=$(project_name); sess=$(tmux_safe "$proj")
+  btmux has-session -t "=$sess" 2>/dev/null || die "no workbench session '$sess' — run 'bench up' first"
+  btmux list-windows -t "=$sess" -F '#{window_name}' | grep -qx crew || cmd_up >/dev/null
+
+  if [ "${1:-}" = --all ]; then
+    for f in "$(state_dir)"/tasks/T-*.md; do
+      [ -e "$f" ] || continue
+      id=$(fm_get "$f" id)
+      btmux has-session -t "=$(worker_session "$id")" 2>/dev/null && ids+=("$id")
+    done
+    [ "${#ids[@]}" -gt 0 ] || die "no live worker sessions to embed — 'bench status' shows who's running"
+  else
+    ids=("$(norm_id "${1:-}")")
+    require_task "${ids[0]}" >/dev/null
+  fi
+
+  for id in "${ids[@]}"; do
+    wsess=$(worker_session "$id")
+    btmux has-session -t "=$wsess" 2>/dev/null \
+      || die "$id has no live worker session — 'bench spawn $id' (pending) or 'bench resume $id' (dead), then embed"
+    if [ -n "$(_tx_view_pane "$sess" "$wsess")" ]; then
+      echo "embedded  already   $id (crew tile exists)"
+      continue
+    fi
+    # The tile runs a nested client of the worker session on the SAME server/socket.
+    # TMUX must be cleared or tmux refuses to nest.
+    attach="env TMUX= tmux ${BENCH_TMUX_SOCKET:+-L $(printf %q "$BENCH_TMUX_SOCKET") }attach-session -t $(printf %q "=$wsess")"
+    btmux set-option -t "=$wsess" status off 2>/dev/null || true   # tile shows work, not a second bar
+    pane=$(btmux split-window -d -t "=$sess:crew" -P -F '#{pane_id}' "$attach") \
+      || die "could not split a crew tile for $id"
+    btmux set-option -p -t "$pane" @bench_view "$wsess"
+    echo "embedded  view      $id → crew (interactive; closing the tile detaches, never kills)"
+  done
+  btmux select-layout -t "=$sess:crew" tiled >/dev/null 2>&1 || true
+}
+
+# cmd_pop <id> — remove a worker's crew tile. The session keeps running headless.
+cmd_pop() {
+  local id sess wsess pane
+  id=$(norm_id "${1:-}")
+  require_task "$id" >/dev/null
+  sess=$(tmux_safe "$(project_name)")
+  wsess=$(worker_session "$id")
+  pane=$(_tx_view_pane "$sess" "$wsess")
+  [ -n "$pane" ] || die "$id has no crew tile — 'bench embed $id' creates one"
+  btmux kill-pane -t "$pane" 2>/dev/null || true
+  btmux set-option -u -t "=$wsess" status 2>/dev/null || true     # give the session its bar back
+  btmux select-layout -t "=$sess:crew" tiled >/dev/null 2>&1 || true
+  echo "popped    view      $id (worker session $wsess keeps running)"
+}
+
 # cmd_nudge: type a line into a running worker — literal text, a 100 ms pause, then Enter as a
 # separate send (the pause + split send work around interactive-TUI paste handling; spec §3.1).
 cmd_nudge() {
