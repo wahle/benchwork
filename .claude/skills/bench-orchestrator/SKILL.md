@@ -84,6 +84,12 @@ flagged: `bench peek <id>` to see the pane, then `bench nudge <id> "…"` to
 answer (or click into the pane). Do not branch automation on it or treat it as a
 status transition; if the signal is wrong, the worst case is a missing hint.
 
+Two behaviors to expect (observed live): a FRESH worker always parks on Claude
+Code's folder-trust prompt first — watch for the orange chip after spawn and
+`bench nudge <id> ""` (a bare Enter) to accept. And once flagged, orange clears
+on the worker's next **commit**, not on mere output — a worker that resumed but
+hasn't committed yet may stay orange a while; peek before assuming it's stuck.
+
 ## Practical notes
 
 - `bench task new` prints the task-file path. Fill in **Goal**, **Expected

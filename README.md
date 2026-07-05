@@ -82,7 +82,7 @@ invite a `peek` — they never drive state. Answer with: click the chip → `pee
 
 ## tmux styling
 
-The look (rounded borders, dim inactive borders, accent active pane, nerd-font
+The look (pane-border titles, dim inactive borders, accent active pane, nerd-font
 glyphs with a `BENCH_ASCII=1` fallback) and the complete hotkey set live in
 `bench.tmux.conf`. Source it from your `~/.tmux.conf`:
 
