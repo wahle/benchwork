@@ -116,9 +116,17 @@ cmd_spawn() {
 
 # cmd_watch: re-point the deck's diff pane at <id>'s worktree so you see that task's live diff.
 # Never touches task state — this is purely a viewing convenience (spec A.8: one live diff at a time).
+# Default view is the FULL task diff vs base (committed + uncommitted — `git diff <base>` two-dot):
+# found live in wave 1 that diffpane only shows uncommitted changes, i.e. it goes blank at the
+# review stage, exactly when you most want the diff. `--tui` opts into diffpane's prettier view.
 cmd_watch() {
-  local id tf wt sess
-  id=$(norm_id "${1:-}")
+  local id="" tf wt sess tui=0 a
+  for a in "$@"; do case "$a" in
+    --tui) tui=1 ;;
+    -*)    die "watch: unknown flag: $a — usage: bench watch <id> [--tui]" ;;
+    *)     [ -n "$id" ] || id=$a ;;
+  esac; done
+  id=$(norm_id "${id:-}")
   tf=$(require_task "$id")
   wt=$(fm_get "$tf" worktree)
   [ -d "${wt:-/nonexistent}" ] || die "$id has no live worktree yet — run 'bench spawn $id' to create it"
@@ -127,14 +135,14 @@ cmd_watch() {
   # Self-heal a manually-killed deck window; cmd_up is idempotent and recreates only what's missing.
   btmux list-windows -t "=$sess" -F '#{window_name}' | grep -qx deck || cmd_up >/dev/null
 
-  # Choose the diff viewer: the diffpane TUI if installed, otherwise a refreshing git-diff loop.
   local cmd how
-  if command -v diffpane >/dev/null 2>&1; then
+  if [ "$tui" = 1 ] && command -v diffpane >/dev/null 2>&1; then
     cmd=diffpane
-    how="diffpane"
+    how="diffpane TUI (uncommitted changes only — blank once the worker commits)"
   else
+    [ "$tui" = 1 ] && echo "bench: diffpane not installed — showing the standard full-diff view instead"
     cmd="watch --color -n 2 git -c color.ui=always diff $(printf %q "$(conf_get base main)")"
-    how="a 'watch git diff' loop (install diffpane for the full live-diff TUI)"
+    how="full task diff vs $(conf_get base main), committed + uncommitted (refreshes every 2s; --tui for diffpane)"
   fi
 
   # The diff pane is whichever pane in the deck window is tagged @bench_role=diffpane, if any.

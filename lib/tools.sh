@@ -117,8 +117,8 @@ cmd_doctor() {
   else _tl_line FAIL "git not on PATH" "install git — bench's state and worktrees are all git"; fail=1; fi
   if command -v lazygit >/dev/null 2>&1; then _tl_line ok "lazygit on PATH"
   else _tl_line warn "lazygit not on PATH" "install lazygit for the review TUI — without it 'bench review' shows a diffstat only"; fi
-  if command -v diffpane >/dev/null 2>&1; then _tl_line ok "diffpane on PATH"
-  else _tl_line warn "diffpane not on PATH" "install diffpane for the live-diff pane — without it 'bench watch' falls back to a git-diff loop"; fi
+  if command -v diffpane >/dev/null 2>&1; then _tl_line ok "diffpane on PATH (bench watch --tui)"
+  else _tl_line warn "diffpane not on PATH" "install diffpane for 'bench watch --tui' (pretty uncommitted-changes view); default watch works without it"; fi
   if command -v fzf >/dev/null 2>&1; then _tl_line ok "fzf on PATH (Alt+g task panel)"
   else _tl_line warn "fzf not on PATH" "install fzf for the Alt+g task panel — sudo apt install fzf"; fi
   claude=${BENCH_CLAUDE:-claude}
