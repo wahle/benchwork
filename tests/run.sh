@@ -852,6 +852,104 @@ rc2=0; [ "$rc" -ne 0 ] || rc2=1; report "t37 embed on a never-spawned task dies 
 
 # ═══ t39 RESERVED — nav wave T-B: board pass + safety rules (docs/nav_wave_spec.md §2.3).
 # Only T-B edits between these markers. ═══
+# board = one deterministic relayout pass over the crew window, driven by task
+# status + the @bench_view tile inventory. Fixture-driven like t37 (mock workers).
+# Preamble: isolate from earlier tests' lingering live workers so the promote/tiled
+# decisions are driven ONLY by t39's own workers (board embeds EVERY alive
+# working|blocked|review task, and an earlier `!`/review worker would otherwise win
+# the main pane). Kill stray worker sessions, clear crew tiles, drop the snapshot.
+for _s in $(tmuxs list-sessions -F '#{session_name}' 2>/dev/null | grep '^bench-fixture-' || true); do
+  tmuxs kill-session -t "=$_s" 2>/dev/null || true
+done
+while read -r _p _v; do
+  [ -n "$_v" ] || continue
+  tmuxs kill-pane -t "$_p" 2>/dev/null || true
+done < <(tmuxs list-panes -t "=$SESS:crew" -F '#{pane_id} #{@bench_view}' 2>/dev/null)
+rm -f "$SD/.board-state"
+bench up >/dev/null 2>&1                                     # ensure deck + crew exist
+
+# --- embed-missing: an alive working task with no tile gets embedded ---
+mk_task "board-idle"; biid=$NEWID
+bench task set "$biid" mockmode idle >/dev/null 2>&1
+bench spawn "$biid" >/dev/null 2>&1
+for _ in $(seq 1 25); do tmuxs has-session -t "=bench-fixture-$biid" 2>/dev/null && break; sleep 0.2; done
+bo1=$(bench board 2>&1); report "t39 board exits 0" $?
+grep -q "board: embedded $biid" <<<"$bo1"; report "t39 embeds an alive working task with no tile" $?
+rc=1; for _ in $(seq 1 25); do [ -n "$(view_pane "bench-fixture-$biid")" ] && { rc=0; break; }; sleep 0.2; done
+report "t39 embed created a crew tile tagged @bench_view=<worker session>" "$rc"
+
+# --- idempotent second pass: identical input ⇒ no-op, prints nothing (core assertion) ---
+bo2=$(bench board 2>&1); rc=$?
+rc2=0; { [ "$rc" -eq 0 ] && [ -z "$bo2" ]; } || rc2=1
+report "t39 identical second pass is a silent no-op (transition-gated)" "$rc2" "rc=$rc out=[$bo2]"
+rc=0; [ -f "$SD/.board-state" ] || rc=1; report "t39 snapshot persisted at \$(state_dir)/.board-state" "$rc"
+
+# --- promote-on-review: a review task becomes the main pane (main-vertical) ---
+mk_task "board-review" --files 'worker.txt'; brid=$NEWID       # default mock → commit + status review
+bench spawn "$brid" >/dev/null 2>&1
+rc=0; poll_status "$brid" review 15 || rc=1
+report "t39 review-mode worker reaches status=review" "$rc" "status=$(task_status "$brid")"
+for _ in $(seq 1 25); do tmuxs has-session -t "=bench-fixture-$brid" 2>/dev/null && break; sleep 0.2; done
+bo3=$(bench board 2>&1)
+grep -q "board: embedded $brid" <<<"$bo3"; report "t39 board embeds the newly-review task" $?
+rc=0; grep -q "board: promoted $brid (review)" <<<"$bo3" || rc=1
+report "t39 promotes the review task to the main pane" "$rc" "out=[$bo3]"
+# The review tile must be the main pane: after main-vertical it sits at column 0
+# (pane_left==0) and spans the full window height (the tallest pane).
+mainw=$(tmuxs list-panes -t "=$SESS:crew" -F '#{@bench_view} #{pane_left} #{pane_height}' 2>/dev/null \
+        | awk -v w="bench-fixture-$brid" '$1==w{print $2" "$3}')
+rc=0; [ "${mainw%% *}" = 0 ] || rc=1
+report "t39 promoted review tile is the main (leftmost) pane" "$rc" "left height=[$mainw]"
+
+# --- pop merged/abandoned: a tile whose task is archived is removed (session lives on) ---
+mk_task "board-merge"; bmid=$NEWID
+bench task set "$bmid" mockmode idle >/dev/null 2>&1
+bench spawn "$bmid" >/dev/null 2>&1
+for _ in $(seq 1 25); do tmuxs has-session -t "=bench-fixture-$bmid" 2>/dev/null && break; sleep 0.2; done
+bench board >/dev/null 2>&1                                   # register bmid in the snapshot (embeds its tile)
+rc=1; for _ in $(seq 1 25); do [ -n "$(view_pane "bench-fixture-$bmid")" ] && { rc=0; break; }; sleep 0.2; done
+report "t39 board embedded the to-be-merged task" "$rc"
+fm_set "$(task_file "$bmid")" status merged                  # simulate a merge…
+mv "$(task_file "$bmid")" "$SD/archive/$bmid.md"             # …and archive it (task file leaves tasks/)
+bo4=$(bench board 2>&1)
+rc=0; grep -q "board: popped $bmid (merged/abandoned)" <<<"$bo4" || rc=1
+report "t39 pops the tile of a merged/abandoned task" "$rc" "out=[$bo4]"
+rc=0; [ -z "$(view_pane "bench-fixture-$bmid")" ] || rc=1
+report "t39 popped tile is gone from crew" "$rc"
+t "t39 worker session STILL ALIVE after board pop (views never own sessions)" \
+  tmuxs has-session -t "=bench-fixture-$bmid"
+
+# --- pop dead session: killing a worker leaves no lingering tile ---
+mk_task "board-dead"; bdid=$NEWID
+bench task set "$bdid" mockmode idle >/dev/null 2>&1
+bench spawn "$bdid" >/dev/null 2>&1
+for _ in $(seq 1 25); do tmuxs has-session -t "=bench-fixture-$bdid" 2>/dev/null && break; sleep 0.2; done
+bench board >/dev/null 2>&1                                   # embed bdid
+tmuxs kill-session -t "=bench-fixture-$bdid" 2>/dev/null || true
+bench board >/dev/null 2>&1                                   # dead session ⇒ pop (or the pane self-closed)
+rc=0; [ -z "$(view_pane "bench-fixture-$bdid")" ] || rc=1
+report "t39 a dead worker's tile is gone after a board pass" "$rc"
+
+# --- zoom-skip: a zoomed crew makes the whole pass a hands-off no-op ---
+mk_task "board-zoom"; bzid=$NEWID
+bench task set "$bzid" mockmode idle >/dev/null 2>&1
+bench spawn "$bzid" >/dev/null 2>&1                          # a fresh change is now pending (bzid untiled)
+for _ in $(seq 1 25); do tmuxs has-session -t "=bench-fixture-$bzid" 2>/dev/null && break; sleep 0.2; done
+tmuxs resize-pane -Z -t "=$SESS:crew" 2>/dev/null || true    # zoom the crew's active pane
+zf=$(tmuxs display-message -p -t "=$SESS:crew" '#{window_zoomed_flag}' 2>/dev/null)
+boz=$(bench board 2>&1)
+rc=0; grep -q "board: skipped (zoomed)" <<<"$boz" || rc=1
+report "t39 skips the whole pass when the crew is zoomed, saying why" "$rc" "zoom=$zf out=[$boz]"
+rc=0; [ -z "$(view_pane "bench-fixture-$bzid")" ] || rc=1
+report "t39 zoom-skip did NOT embed the pending task" "$rc"
+tmuxs resize-pane -Z -t "=$SESS:crew" 2>/dev/null || true    # un-zoom
+boz2=$(bench board 2>&1)                                     # the change was not lost — now it acts
+rc=0; grep -q "board: embedded $bzid" <<<"$boz2" || rc=1
+report "t39 un-zooming re-processes the skipped change (snapshot not persisted while zoomed)" "$rc" "out=[$boz2]"
+
+# --- bad flag is rejected with usage ---
+bench board --bogus >/dev/null 2>&1; rc=$?
+rc2=0; [ "$rc" -ne 0 ] || rc2=1; report "t39 unknown flag dies with usage" "$rc2"
 
 # ═══ end t39 ═══
 
