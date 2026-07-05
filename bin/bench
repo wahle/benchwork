@@ -19,6 +19,7 @@ bench <verb> — a talk-driven agent workbench on tmux + git
   status [--tmux|--json|--tree|--stale|--refresh-titles]   read-only state report
   watch <id>                    point the deck diff pane at a task's worktree
   peek <id> [-n 30]             tail of the worker's pane (human eyes only)
+  panel                         fzf task palette (Alt+g): jump/watch/peek
   review <id>                   diffstat + expected-files check (+ lazygit pane)
   done <id> [--yes]             squash-merge into base, archive, remove worktree
   abandon <id>                  archive as abandoned, remove worktree, keep branch
@@ -38,6 +39,7 @@ case "$verb" in
   status) cmd_status "$@" ;;
   watch)  cmd_watch "$@" ;;
   peek)   cmd_peek "$@" ;;
+  panel)  cmd_panel "$@" ;;
   doctor) cmd_doctor "$@" ;;
   clean)  cmd_clean "$@" ;;
   review) cmd_review "$@" ;;

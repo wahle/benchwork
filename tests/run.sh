@@ -816,6 +816,12 @@ lo2=$(bench clean 2>&1)
 rc=0; { grep -qE "worktree +removed" <<<"$lo2" && [ ! -d "$lowt" ]; } || rc=1
 report "t35 after unlock, clean removes the worktree and says so" "$rc" "out=[$lo2]"
 
+# --- t36: panel (Appendix-B tier-1 palette) — guard rails only; fzf interaction is manual ---
+p36=$(TMUX='' bench panel 2>&1); rc=$?
+rc2=0; [ "$rc" -ne 0 ] || rc2=1; report "t36 panel outside tmux dies" "$rc2"
+grep -qi 'inside tmux' <<<"$p36"; report "t36 panel names the fix (attach to tmux first)" $?
+bench help 2>&1 | grep -q 'panel'; report "t36 usage lists the panel verb" $?
+
 # ---- summary ----
 printf '1..%d\n' "$TESTNUM"
 printf '# passed %d, failed %d\n' "$((TESTNUM - FAILS))" "$FAILS"

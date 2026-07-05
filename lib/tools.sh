@@ -12,6 +12,53 @@
 # gates on the mouse / @bench_conf checks.
 _tl_server_up() { btmux list-sessions >/dev/null 2>&1; }
 
+# ── panel ───────────────────────────────────────────────────────────────────
+
+# panel — the Appendix-B tier-1 control palette (user-requested during the first wave):
+# an fzf list of every task in a tmux popup. Enter jumps INTO that worker's session
+# (answer its prompts in person), ctrl-w points the deck diff pane at it, ctrl-o peeks.
+# Pure client of the same state every other renderer reads; every action is a bench verb
+# or a session switch — no new state, no scraping.
+cmd_panel() {
+  [ -n "${TMUX:-}" ] || die "panel runs inside tmux — attach first: tmux attach -t $(tmux_safe "$(project_name)")"
+  command -v fzf >/dev/null 2>&1 \
+    || die "panel needs fzf — install: sudo apt install fzf  (or drop the static binary into ~/.local/bin)"
+
+  local d f rows="" mark sel key line pick
+  # shellcheck disable=SC2034  # _st_load populates ALL of these via dynamic scope; panel reads a subset
+  local id title status branch worktree model port question updated last_commit is_stale session alive
+  local needs_input needs_input_confirmed
+  d=$(state_dir)
+  for f in "$d"/tasks/T-*.md; do
+    [ -e "$f" ] || continue
+    _st_load "$f"
+    mark=" "
+    [ "$needs_input" = true ] && mark="?"
+    [ "$needs_input_confirmed" = true ] && mark="!"
+    rows+=$(printf '%-7s %-8s %s  %s' "$id" "$status" "$mark" "$title")$'\n'
+  done
+  [ -n "$rows" ] || die "no tasks yet — 'bench task new \"title\"' to cut one"
+
+  sel=$(printf '%s' "$rows" | fzf --no-sort --reverse \
+        --prompt='bench> ' \
+        --header='enter: open worker session · ctrl-w: watch · ctrl-o: peek · esc: close' \
+        --expect=ctrl-w,ctrl-o) || return 0
+  key=$(printf '%s\n' "$sel" | head -n1)
+  line=$(printf '%s\n' "$sel" | sed -n 2p)
+  pick=${line%% *}
+  [ -n "$pick" ] || return 0
+
+  case "$key" in
+    ctrl-w) cmd_watch "$pick" ;;
+    ctrl-o) cmd_peek "$pick" -n 40 || true
+            printf '\n[any key to close] '; read -r -n1 -s || true ;;
+    *)  if ! btmux switch-client -t "=$(worker_session "$pick")" 2>/dev/null; then
+          echo "no live worker session for $pick — 'bench spawn $pick' (pending) or 'bench resume $pick' (dead)"
+          printf '[any key to close] '; read -r -n1 -s || true
+        fi ;;
+  esac
+}
+
 # ── peek ────────────────────────────────────────────────────────────────────
 
 # peek <id> [-n N] — tail of the worker pane, for human eyes only (never parsed for state).
@@ -72,6 +119,8 @@ cmd_doctor() {
   else _tl_line warn "lazygit not on PATH" "install lazygit for the review TUI — without it 'bench review' shows a diffstat only"; fi
   if command -v diffpane >/dev/null 2>&1; then _tl_line ok "diffpane on PATH"
   else _tl_line warn "diffpane not on PATH" "install diffpane for the live-diff pane — without it 'bench watch' falls back to a git-diff loop"; fi
+  if command -v fzf >/dev/null 2>&1; then _tl_line ok "fzf on PATH (Alt+g task panel)"
+  else _tl_line warn "fzf not on PATH" "install fzf for the Alt+g task panel — sudo apt install fzf"; fi
   claude=${BENCH_CLAUDE:-claude}
   if command -v "$claude" >/dev/null 2>&1; then _tl_line ok "claude on PATH ($claude)"
   else _tl_line warn "claude not on PATH ($claude)" "install claude or set BENCH_CLAUDE=/path/to/claude — workers can't spawn without it"; fi
