@@ -771,6 +771,51 @@ tmr=$(bench status --tmux 2>/dev/null)
 grep -qF '#[range=user|task_T-' <<<"$tmr"; report "t33 --tmux wraps chips in #[range=user|task_<id>]" $?
 grep -qF '#[norange]' <<<"$tmr"; report "t33 --tmux closes each chip range with #[norange]" $?
 
+# =====================================================================
+# Slice-3 validator regression tests (t34–t35) — lock in the 2 BUG fixes.
+# =====================================================================
+
+# --- t34: status --tmux degrades cleanly BEFORE bench init (no .git for the
+# bell cache/lock — the conf's status-right runs this form every 5s). ---
+FIX3="$WORK/preinit"
+mkdir -p "$FIX3"
+git -C "$FIX3" init -qb main
+git -C "$FIX3" config user.email test@bench.test
+git -C "$FIX3" config user.name bench-test
+printf 'x\n' > "$FIX3/f"; git -C "$FIX3" add -A; git -C "$FIX3" commit -qm "init preinit"
+cd "$FIX3" || { echo "cannot cd to preinit fixture"; exit 2; }
+t34out=$(bench status --tmux 2>&1); rc=$?
+report "t34 pre-init status --tmux exits 0" "$rc" "out=[$t34out]"
+rc=0; grep -qi 'no such file' <<<"$t34out" && rc=1
+report "t34 pre-init status --tmux emits no lock/cache error" "$rc" "out=[$t34out]"
+bench status --tmux --refresh-titles >/dev/null 2>&1
+report "t34 pre-init status --tmux --refresh-titles exits 0 (the conf's exact form)" $?
+cd "$FIX" || { echo "cannot cd back to fixture"; exit 2; }
+
+# --- t35: clean receipt honesty — a LOCKED orphan worktree cannot be removed;
+# clean must say "stuck" with the fix, not lie "removed", and must not converge
+# to "nothing to clean" while the leftover persists. ---
+mk_task "locked-orphan"; loid=$NEWID
+bench task set "$loid" mockmode idle >/dev/null 2>&1
+bench spawn "$loid" >/dev/null 2>&1
+lowt="$(wt_of "$loid")"
+tmuxs kill-session -t "=bench-fixture-$loid" 2>/dev/null || true
+fm_set "$(task_file "$loid")" status merged
+mv "$(task_file "$loid")" "$SD/archive/$loid.md"          # crash-mid-done orphan
+git -C "$FIX" worktree lock "$lowt" 2>/dev/null
+lo1=$(bench clean 2>&1); report "t35 clean exits 0 with a locked worktree" $?
+rc=0; grep -q "stuck" <<<"$lo1" || rc=1
+report "t35 receipt says the locked worktree is stuck (with the unlock fix)" "$rc" "out=[$lo1]"
+rc=0; grep -qE "worktree +removed +$lowt" <<<"$lo1" && rc=1
+report "t35 receipt does NOT claim the locked worktree was removed" "$rc" "out=[$lo1]"
+rc=0; [ -d "$lowt" ] || rc=1; report "t35 locked worktree really is still on disk" "$rc"
+rc=0; grep -q 'nothing to clean' <<<"$lo1" && rc=1
+report "t35 stuck leftovers suppress the 'nothing to clean' all-tidy claim" "$rc"
+git -C "$FIX" worktree unlock "$lowt" 2>/dev/null
+lo2=$(bench clean 2>&1)
+rc=0; { grep -qE "worktree +removed" <<<"$lo2" && [ ! -d "$lowt" ]; } || rc=1
+report "t35 after unlock, clean removes the worktree and says so" "$rc" "out=[$lo2]"
+
 # ---- summary ----
 printf '1..%d\n' "$TESTNUM"
 printf '# passed %d, failed %d\n' "$((TESTNUM - FAILS))" "$FAILS"

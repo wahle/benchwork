@@ -26,7 +26,7 @@ Run these; do not reimplement them. Task ids accept `42`, `T-42`, or `T-042`.
 | `bench task set <id> <key> <value>` | Atomic frontmatter write (+ state commit). The only way to edit a task file. |
 | `bench spawn <id>` | Create worktree+branch, launch the worker, flip status to working. |
 | `bench status` | Human table of all tasks + per-branch last commit. |
-| `bench status --tmux` | Status-bar chip line (drives the bar; also bells + refreshes titles). |
+| `bench status --tmux` | Status-bar chip line (drives the bar; also bells). Add `--refresh-titles` to retitle panes. |
 | `bench status --json` | Machine state — poll this between turns. Includes advisory `needs_input`. |
 | `bench status --tree` | Session tree (workbench → cores → workers); the contract UIs render. |
 | `bench status --stale` | Flag workers idle 20 min (no commit AND no file update). |

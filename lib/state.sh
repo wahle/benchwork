@@ -151,6 +151,9 @@ _st_json_obj() {   # flat --json object (contract key order)
 # the one bench lock (never invent a second). Fully guarded — never breaks a status run.
 _st_bell_and_cache() {
   local newcache=$1 cache proj sess
+  # Pre-init there is no .git to hold the lock/cache — degrade silently like every
+  # other status form does (the conf's status-right runs this form every 5s).
+  [ -d "$(state_dir)/.git" ] || return 0
   cache="$(state_dir)/.git/bench.lastseen"
   proj=$(project_name); sess=$(tmux_safe "$proj")
   (

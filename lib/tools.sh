@@ -152,7 +152,7 @@ _tl_receipt() { printf '%-9s %-8s %s\n' "$1" "$2" "$3"; }
 # files) and print a receipt of exactly what went. A no-op says so. Every git/tmux call is
 # fault-tolerant: a target that is already gone is success, not an error.
 cmd_clean() {
-  local d repo proj changed=0
+  local d repo proj changed=0 stuck=0
   proj=$(project_name); d=$(state_dir); repo=$(conf_get repo)
 
   # 1. Orphan worker sessions: bench-<safeproj>-T-* with no live task file.
@@ -178,8 +178,14 @@ cmd_clean() {
       case "$bn" in
         "$proj"-T-*) tid=${bn#"$proj"-}
           if [ ! -f "$d/tasks/$tid.md" ]; then
-            git -C "$repo" worktree remove --force "$wpath" >/dev/null 2>&1 || true
-            _tl_receipt worktree removed "$wpath"; changed=1
+            # Only claim "removed" when git agrees (a locked/odd worktree fails even
+            # with --force) — a receipt must never lie about what happened.
+            if git -C "$repo" worktree remove --force "$wpath" >/dev/null 2>&1; then
+              _tl_receipt worktree removed "$wpath"; changed=1
+            else
+              _tl_receipt worktree stuck "$wpath — remove failed; try: git -C $repo worktree unlock $wpath && bench clean"
+              stuck=1
+            fi
           fi ;;
       esac
     done < <(git -C "$repo" worktree list --porcelain 2>/dev/null || true)
@@ -195,8 +201,12 @@ cmd_clean() {
         agent/T-*) tid=${br#agent/}
           arch="$d/archive/$tid.md"
           if [ ! -f "$d/tasks/$tid.md" ] && [ -f "$arch" ] && [ "$(fm_get "$arch" status)" = merged ]; then
-            git -C "$repo" branch -D "$br" >/dev/null 2>&1 || true
-            _tl_receipt branch deleted "$br"; changed=1
+            if git -C "$repo" branch -D "$br" >/dev/null 2>&1; then
+              _tl_receipt branch deleted "$br"; changed=1
+            else
+              _tl_receipt branch stuck "$br — delete failed (checked out somewhere?); try: git -C $repo branch -D $br"
+              stuck=1
+            fi
           fi ;;
       esac
     done < <(git -C "$repo" branch --list 'agent/T-*' 2>/dev/null || true)
@@ -216,7 +226,7 @@ cmd_clean() {
   #    dir itself is unchanged, so this is safe even when only sessions/branches moved).
   if [ "$changed" = 1 ]; then
     state_commit "clean"
-  else
+  elif [ "$stuck" = 0 ]; then
     echo "nothing to clean — workbench is tidy"
   fi
   return 0
