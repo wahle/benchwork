@@ -12,6 +12,24 @@
 # gates on the mouse / @bench_conf checks.
 _tl_server_up() { btmux list-sessions >/dev/null 2>&1; }
 
+# _tl_tmux_ver — the running tmux's version tag (e.g. "3.7b"); empty if tmux is absent.
+_tl_tmux_ver() { btmux -V 2>/dev/null | awk '{print $2}'; }
+
+# _tl_tmux_ge37 — 0 iff the running tmux is >= 3.7, the nav wave's floor (control|N click
+# ranges land in 3.7b; docs/nav_wave_spec.md). Same integer maj/min parse as common.sh's
+# tmux_ge34 so a build tag ("3.7b") or a future 3.10 compares right; an unparseable tag
+# (leading non-digit, e.g. "next-3.8") counts as modern.
+_tl_tmux_ge37() {
+  local v maj min
+  v=$(_tl_tmux_ver); [ -n "$v" ] || return 1
+  v=${v%%[!0-9.]*}; [ -n "$v" ] || return 0
+  maj=${v%%.*}
+  case "$v" in *.*) min=${v#*.}; min=${min%%.*} ;; *) min=0 ;; esac
+  [ "${maj:-0}" -gt 3 ] && return 0
+  { [ "${maj:-0}" -eq 3 ] && [ "${min:-0}" -ge 7 ]; } && return 0
+  return 1
+}
+
 # ── panel ───────────────────────────────────────────────────────────────────
 
 # panel — the Appendix-B tier-1 control palette (user-requested during the first wave):
@@ -177,7 +195,39 @@ cmd_doctor() {
     else _tl_line warn "bench.tmux.conf not sourced (status bar / hotkeys inactive)" "echo 'source-file $BENCH_ROOT/bench.tmux.conf' >> ~/.tmux.conf"; fi
   fi
 
-  # 7. transcript hints — opt-in only; report whether the format looks parseable.
+  # 7. nav layer — the mouse menus (bench menu), self-arranging crew (bench board) and
+  #    chip clicks from the nav wave (docs/nav_wave_spec.md) silently no-op when the tmux
+  #    environment is wrong, so surface each prerequisite by name. The version probe needs
+  #    no server; the binding/@bench_repo probes reuse _tl_server_up so doctor never starts
+  #    one. (The `mouse on` prerequisite is check #3 above — enabled by the same conf.)
+  local ver bindings wbsess repval
+  ver=$(_tl_tmux_ver)
+  if _tl_tmux_ge37; then _tl_line ok "tmux >= 3.7 (nav mouse click ranges — found ${ver:-?})"
+  else _tl_line warn "tmux ${ver:-<unknown>} < 3.7 (nav mouse menus / [≡] glyph inert)" "install tmux 3.7b — the control|N click ranges the tile menu rides on need it"; fi
+
+  if _tl_server_up; then
+    bindings=$(btmux list-keys 2>/dev/null) || true
+    # Match the bench signature, not the bare key names: tmux's own defaults already bind
+    # MouseDown3Pane and MouseDown1Control9, so only 'bench menu' proves the conf is sourced.
+    if grep -qE 'MouseDown3Pane .*bench menu' <<<"$bindings" \
+       && grep -qE 'MouseDown1Control9 .*bench menu' <<<"$bindings"; then
+      _tl_line ok "nav mouse bindings registered (right-click tile menu + [≡] glyph)"
+    else
+      _tl_line warn "nav mouse bindings missing (right-click menu / [≡] glyph do nothing)" "tmux source-file $BENCH_ROOT/bench.tmux.conf  (registers the nav bindings on this server)"
+    fi
+
+    wbsess=$(tmux_safe "$proj")
+    # has-session takes the `=` exact-match prefix; show-options does NOT resolve it, so the
+    # guard uses `=` (only the exact workbench session counts) and the read the plain name —
+    # safe because no other session shares the "fixture"/project prefix (workers are bench-*).
+    if btmux has-session -t "=$wbsess" 2>/dev/null; then
+      repval=$(btmux show-options -t "$wbsess" -v @bench_repo 2>/dev/null) || true
+      if [ -n "$repval" ]; then _tl_line ok "@bench_repo set on the workbench session ($wbsess → $repval)"
+      else _tl_line warn "@bench_repo unset on the workbench session ($wbsess); status chips / menus / Alt+Space can't find the repo" "run 'bench up' to (re)stamp @bench_repo on the session"; fi
+    fi
+  fi
+
+  # 8. transcript hints — opt-in only; report whether the format looks parseable.
   if [ "${BENCH_TRANSCRIPT_HINTS:-}" = 1 ]; then
     local pdir="$HOME/.claude/projects" newest=""
     if [ -d "$pdir" ]; then

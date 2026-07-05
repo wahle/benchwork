@@ -1083,6 +1083,59 @@ unset BENCH_SILENCE_SECS
 
 # ═══ end t40 ═══
 
+# ═══ t41 — nav wave T-005: doctor nav-layer checks (docs/nav_wave_spec.md).
+# doctor's mouse-menu / board / chip-click prerequisites: tmux>=3.7, mouse on, conf
+# bindings, @bench_repo on the workbench session. Driven against PRIVATE throwaway
+# servers (own -L socket, -f /dev/null) via BENCH_TMUX_SOCKET so the warn/ok paths are
+# deterministic regardless of the developer's ambient ~/.tmux.conf sourcing bench.tmux.conf. ═══
+cd "$FIX" || { echo "cannot cd to fixture"; exit 2; }
+d41proj=$(tmux_safe "$(basename "$FIX")")                    # == doctor's workbench session name
+
+# --- conf-less server: every nav prerequisite fails → warn + exact fix on each line ---
+d41s="navdoc$$"
+command tmux -L "$d41s" -f /dev/null new-session -d -s "$d41proj" -x 80 -y 24 'sleep 60' 2>/dev/null
+d41=$(BENCH_TMUX_SOCKET="$d41s" bench doctor 2>&1); d41rc=$?
+rc=0; [ "$d41rc" -eq 0 ] || rc=1
+report "t41 doctor exits 0 against a conf-less nav server (warns, no FAIL)" "$rc" "rc=$d41rc"
+# tmux >= 3.7 nav-range check runs and names the version found.
+rc=0; grep -qE 'tmux >= 3\.7 .*found' <<<"$d41" || rc=1
+report "t41 doctor runs the tmux >= 3.7 nav check, naming the version" "$rc" "line=[$(grep 'tmux >= 3.7' <<<"$d41")]"
+# nav bindings absent (tmux's default MouseDown3Pane/Control9 don't carry 'bench menu') → warn.
+nbl=$(grep -i 'nav mouse binding' <<<"$d41" | head -1)
+rc=0; { grep -qi 'warn' <<<"$nbl" && grep -q 'source-file' <<<"$nbl"; } || rc=1
+report "t41 missing nav bindings warn names 'tmux source-file <repo>/bench.tmux.conf'" "$rc" "line=[$nbl]"
+grep -qF "$REPO/bench.tmux.conf" <<<"$nbl"; report "t41 the bindings fix points at the repo's bench.tmux.conf" $?
+# @bench_repo unset on the workbench session → warn naming 'bench up'.
+rbl=$(grep -i '@bench_repo' <<<"$d41" | head -1)
+rc=0; { grep -qi 'warn' <<<"$rbl" && grep -q 'bench up' <<<"$rbl"; } || rc=1
+report "t41 unset @bench_repo warns with the 'bench up' fix" "$rc" "line=[$rbl]"
+# the mouse-on prerequisite (doctor check #3) also warns on this conf-less server.
+mbl=$(grep -i 'mouse' <<<"$d41" | head -1)
+rc=0; { grep -qi 'warn' <<<"$mbl" && grep -q 'mouse on' <<<"$mbl"; } || rc=1
+report "t41 mouse-off warns with the 'set -g mouse on' fix" "$rc" "line=[$mbl]"
+command tmux -L "$d41s" kill-server 2>/dev/null || true
+
+# --- no server at all: server-gated probes skip, doctor never crashes, still exits 0 ---
+d41dead=$(BENCH_TMUX_SOCKET="navdead$$" bench doctor 2>&1); rc=$?
+rc2=0; [ "$rc" -eq 0 ] || rc2=1
+report "t41 doctor with no tmux server up still exits 0 (graceful degrade)" "$rc2" "rc=$rc"
+rc=0; grep -qE 'tmux >= 3\.7' <<<"$d41dead" || rc=1         # the version probe needs no server
+report "t41 the tmux>=3.7 nav check still runs with no server up" "$rc"
+
+# --- conf sourced + @bench_repo stamped: the nav prerequisites report ok ---
+d41ok="navok$$"
+command tmux -L "$d41ok" -f /dev/null new-session -d -s "$d41proj" -x 80 -y 24 'sleep 60' 2>/dev/null
+command tmux -L "$d41ok" source-file "$REPO/bench.tmux.conf" 2>/dev/null
+command tmux -L "$d41ok" set-option -t "$d41proj" @bench_repo "$FIX" 2>/dev/null
+d41g=$(BENCH_TMUX_SOCKET="$d41ok" bench doctor 2>&1)
+rc=0; grep -qE '^ok nav mouse bindings registered' <<<"$d41g" || rc=1
+report "t41 doctor reports ok once the nav bindings are sourced" "$rc" "line=[$(grep -i 'nav mouse binding' <<<"$d41g")]"
+rc=0; grep -qE '^ok @bench_repo set on the workbench session' <<<"$d41g" || rc=1
+report "t41 doctor reports ok once @bench_repo is stamped on the session" "$rc" "line=[$(grep -i '@bench_repo' <<<"$d41g")]"
+command tmux -L "$d41ok" kill-server 2>/dev/null || true
+
+# ═══ end t41 ═══
+
 # ---- summary ----
 printf '1..%d\n' "$TESTNUM"
 printf '# passed %d, failed %d\n' "$((TESTNUM - FAILS))" "$FAILS"
