@@ -10,7 +10,7 @@ and at least one worker running.
 
 | Gesture | What happens |
 |---|---|
-| **Left-click a status-bar chip** | Jumps *into* that worker's claude session (answer prompts in person). Get back with `Ctrl-b s`. |
+| **Left-click a status-bar chip** | Focuses that worker (`bench focus`): its crew tile zooms full-window, fully interactive — answer prompts right there. The status bar stays visible; double-click the tile (or `Alt+z`) to shrink back to the wall. |
 | **Right-click a status-bar chip** | Opens that task's context menu (`bench menu`) — the same menu the tiles use. |
 | **Right-click a crew tile** | Opens the tile's context menu: Jump into worker · Watch diff · Peek · Nudge… · Review · Pop/Embed tile. |
 | **Click the `[≡]` on a tile's border** | Same tile menu — the glyph is just a clickable target for it. |
