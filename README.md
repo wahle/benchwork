@@ -80,6 +80,16 @@ sniffing (advisory only) raises confidence. Advisory hints color chips and
 invite a `peek` — they never drive state. Answer with: click the chip → `peek` →
 `nudge` the reply.
 
+## Navigating
+
+Three commands do the driving; the mouse does the rest:
+
+- `bench up` — bring up (or repair) the tmux session.
+- `bench status` — see who's where, colored by state.
+- **the mouse** — click a chip to jump into a worker, right-click a tile for its
+  menu, double-click to zoom. Full gesture list and troubleshooting:
+  [docs/nav_cheatsheet.md](docs/nav_cheatsheet.md).
+
 ## tmux styling
 
 The look (pane-border titles, dim inactive borders, accent active pane, nerd-font
