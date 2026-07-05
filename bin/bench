@@ -10,7 +10,7 @@ BENCH_ROOT=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 
 usage() {
   cat <<'EOF'
-bench <verb> — agent workbench (slice 1)
+bench <verb> — a talk-driven agent workbench on tmux + git
   init                          create + git-init the project state dir
   up                            create-or-repair tmux session (idempotent)
   task new "title" [--files g]  create next T-###.md (status pending)
