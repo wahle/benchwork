@@ -848,6 +848,57 @@ rc2=0; [ "$rc" -ne 0 ] || rc2=1; report "t37 embed on a never-spawned task dies 
 # ═══ t38 RESERVED — nav wave T-A: menu verb + conf bindings (docs/nav_wave_spec.md §1.3).
 # Only T-A edits between these markers. ═══
 
+# The menu is built against a LIVE worker; spawn a mock (idle) exactly as t37 does.
+mk_task "menu-live"; mlid=$NEWID
+bench task set "$mlid" mockmode idle >/dev/null 2>&1
+bench spawn "$mlid" >/dev/null 2>&1
+for _ in $(seq 1 25); do tmuxs has-session -t "=bench-fixture-$mlid" 2>/dev/null && break; sleep 0.2; done
+
+# --print emits the entries textually so we can assert headless (spec §1.3).
+mprint=$(bench menu "$mlid" --print 2>&1); report "t38 menu --print exits 0 on a live worker" $?
+grep -q 'Jump into worker' <<<"$mprint"; report "t38 menu lists Jump into worker" $?
+grep -q 'Watch diff'       <<<"$mprint"; report "t38 menu lists Watch diff" $?
+grep -q 'Peek'             <<<"$mprint"; report "t38 menu lists Peek" $?
+grep -q 'Nudge'            <<<"$mprint"; report "t38 menu lists Nudge" $?
+grep -q 'Review'           <<<"$mprint"; report "t38 menu lists Review" $?
+grep -qE 'Peek +p'         <<<"$mprint"; report "t38 each entry shows its keyboard equivalent (Peek → p)" $?
+grep -q 'Embed tile'       <<<"$mprint"; report "t38 menu offers Embed when the worker has no tile" $?
+
+# A never-spawned task has no worker session — the menu dies naming 'bench spawn'.
+mk_task "menu-cold"; mcid=$NEWID
+mc=$(bench menu "$mcid" 2>&1); rc=$?
+rc2=0; [ "$rc" -ne 0 ] || rc2=1; report "t38 menu on a never-spawned task dies" "$rc2"
+grep -q 'bench spawn' <<<"$mc"; report "t38 never-spawned menu names 'bench spawn'" $?
+
+# --from-pane resolves the task from the clicked tile's @bench_view; embed to get a tagged tile.
+bench embed "$mlid" >/dev/null 2>&1
+mlpane=""; for _ in $(seq 1 25); do mlpane=$(view_pane "bench-fixture-$mlid"); [ -n "$mlpane" ] && break; sleep 0.2; done
+fp=$(bench menu --from-pane "$mlpane" --print 2>&1); report "t38 menu --from-pane on a tagged tile exits 0" $?
+grep -q "menu $mlid" <<<"$fp"; report "t38 --from-pane resolved the RIGHT task via @bench_view" $?
+grep -q 'Pop tile'   <<<"$fp"; report "t38 menu offers Pop once the worker has a tile" $?
+
+# A pane WITHOUT @bench_view is not a bench tile — one-line death, never a usage/stack dump.
+notag=$(tmuxs new-window -d -P -F '#{pane_id}' -t "=$SESS" 'sleep 300' 2>/dev/null)
+np=$(bench menu --from-pane "$notag" 2>&1); rc=$?
+rc2=0; [ "$rc" -ne 0 ] || rc2=1; report "t38 --from-pane on an untagged pane dies" "$rc2"
+grep -qi 'not a bench crew tile' <<<"$np"; report "t38 untagged-pane death explains itself" $?
+rc=0; [ "$(printf '%s\n' "$np" | grep -c .)" -eq 1 ] || rc=1; report "t38 untagged-pane death is exactly one line" "$rc"
+tmuxs kill-window -t "$notag" 2>/dev/null || true
+
+# Conf sources clean AND registers the new bindings on a throwaway server (control|9 needs
+# tmux ≥3.7). start-server swallows config errors, so source into a live server and check rc.
+mcS="menuconf$$"
+command tmux -L "$mcS" new-session -d -s probe -x 80 -y 24 'sleep 60' 2>/dev/null
+mcerr=$(command tmux -L "$mcS" source-file "$REPO/bench.tmux.conf" 2>&1); mcrc=$?
+mckeys=$(command tmux -L "$mcS" list-keys 2>/dev/null)
+command tmux -L "$mcS" kill-server 2>/dev/null
+rc=0; { [ "$mcrc" -eq 0 ] && [ -z "$mcerr" ]; } || rc=1
+report "t38 bench.tmux.conf sources clean with the menu bindings" "$rc" "rc=$mcrc err=[$mcerr]"
+grep -qE 'MouseDown1Control9 .*bench menu' <<<"$mckeys"; report "t38 conf: [≡] control|9 glyph → tile menu" $?
+grep -qE 'DoubleClick1Pane .*resize-pane -Z' <<<"$mckeys"; report "t38 conf: double-click tile → zoom" $?
+grep -qE '\-T prefix +m .*bench menu' <<<"$mckeys"; report "t38 conf: prefix+m keyboard fallback → menu" $?
+grep -qE 'MouseDown3StatusRight .*bench menu' <<<"$mckeys"; report "t38 conf: chip right-click → menu" $?
+
 # ═══ end t38 ═══
 
 # ═══ t39 RESERVED — nav wave T-B: board pass + safety rules (docs/nav_wave_spec.md §2.3).
