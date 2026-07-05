@@ -10,7 +10,10 @@ cmd_init() {
       "$repo" "$(git -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)" >"$d/project.conf"
   fi
   mkdir -p "$repo/.claude"
-  local allow='{"permissions":{"allow":["Bash(git add:*)","Bash(git commit:*)","Bash(bench task set:*)","Bash(npm test:*)","Bash(tsc:*)"]}}'
+  # Mutating verbs the loop needs, plus read-only verbs so a worker can inspect its
+  # task file and repo without a prompt per look (dogfood papercut: T-001 couldn't
+  # even `cat` its own task file before its first nudge).
+  local allow='{"permissions":{"allow":["Bash(git add:*)","Bash(git commit:*)","Bash(bench task set:*)","Bash(npm test:*)","Bash(tsc:*)","Bash(git status:*)","Bash(git diff:*)","Bash(git log:*)","Bash(cat:*)"]}}'
   if [ ! -f "$repo/.claude/settings.json" ]; then
     printf '%s\n' "$allow" >"$repo/.claude/settings.json"   # commit to base so worktrees inherit it
     echo "wrote $repo/.claude/settings.json (allowlist) — commit it so workers inherit it"
