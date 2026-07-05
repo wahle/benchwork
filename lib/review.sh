@@ -71,12 +71,24 @@ _rv_lazygit() {
   echo "opened lazygit for $wt in the deck review pane"
 }
 
-# review <id> — read-only. Print the branch-vs-base diffstat, flag any files that fall
-# outside the task's predicted surface (A.14 detective control — advisory, never blocks),
-# and open lazygit on the worktree. Task state is never touched.
+# review <id> [--tui] — read-only. Print the branch-vs-base diffstat, flag any files that
+# fall outside the task's predicted surface (A.14 detective control — advisory, never blocks),
+# then print a receipt whose closing lines are the exact on-demand follow-ups. NO pane is ever
+# spawned in this default path (nav_wave_spec §3.1 — the deck's right side stays empty unless
+# explicitly asked). --tui additionally opens lazygit on the worktree in the deck's review pane,
+# on demand; that is the ONLY thing that ever occupies the deck's right side. Task state is
+# never touched either way.
 cmd_review() {
-  local id repo base proj branch wt tf changed glob matched warn=()
-  _rv_ctx "$1"
+  local id repo base proj branch wt tf changed glob matched warn=() tui=0 arg idarg=""
+  for arg in "$@"; do
+    case "$arg" in
+      --tui) tui=1 ;;
+      -*)    die "review: unknown flag: $arg — usage: bench review <id> [--tui]" ;;
+      *)     [ -n "$idarg" ] || idarg=$arg ;;
+    esac
+  done
+  [ -n "$idarg" ] || die "review: which task? — usage: bench review <id> [--tui]"
+  _rv_ctx "$idarg"
   [ -d "$wt" ] || die "$id has no worktree yet — run 'bench spawn $id' first, then review it"
   tf=$(task_file "$id")
 
@@ -115,8 +127,20 @@ cmd_review() {
     echo "   '## Expected files'; give them an extra look, and widen that list if they belong.)"
   fi
 
+  # --tui: open lazygit on demand in the deck's review pane — the only path that ever occupies
+  # the deck's right side, and only when explicitly asked.
+  if [ "$tui" = 1 ]; then
+    echo
+    _rv_lazygit "$proj" "$wt"
+    return 0
+  fi
+
+  # Default path: no pane, no lazygit. Close with the exact commands to reach either view on
+  # demand. These two lines are the receipt's tail (nav_wave_spec §3.1).
   echo
-  _rv_lazygit "$proj" "$wt"
+  echo "next — on demand (nothing opened automatically):"
+  echo "  bench review $id --tui    open lazygit on $branch (deck right side)"
+  echo "  bench watch $id           live diff of $branch vs $base"
 }
 
 # done <id> [--yes] — squash-merge a reviewed task into base, retire the worker, archive it

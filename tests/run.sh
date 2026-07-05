@@ -858,6 +858,72 @@ rc2=0; [ "$rc" -ne 0 ] || rc2=1; report "t37 embed on a never-spawned task dies 
 # ═══ t40 RESERVED — nav wave T-C: review on demand + chip trust (docs/nav_wave_spec.md §3.3).
 # Only T-C edits between these markers. ═══
 
+# --- t40a: review is on-demand — diffstat + receipt, but NEVER spawns a deck pane. ---
+mk_task "t40-review" --files 'worker.txt'; t40r=$NEWID   # default mock commits worker.txt
+bench spawn "$t40r" >/dev/null 2>&1
+poll_status "$t40r" review 15 || true
+bench up >/dev/null 2>&1                                   # guarantee a deck window to count panes in
+deck_before=$(tmuxs list-panes -t "=$SESS:deck" -F '#{pane_id}' 2>/dev/null | wc -l)
+rv40=$(bench review "$t40r" 2>&1); report "t40 review exits 0" $?
+deck_after=$(tmuxs list-panes -t "=$SESS:deck" -F '#{pane_id}' 2>/dev/null | wc -l)
+rc=0; [ "$deck_before" = "$deck_after" ] || rc=1
+report "t40 review spawns NO deck pane (count unchanged)" "$rc" "before=$deck_before after=$deck_after"
+grep -q 'worker.txt' <<<"$rv40"; report "t40 review prints the diffstat" $?
+rc=0; grep -qi 'opened lazygit' <<<"$rv40" && rc=1
+report "t40 plain review never opens lazygit" "$rc"
+grep -qF "bench review $t40r --tui" <<<"$rv40"; report "t40 receipt names 'review --tui' next command" $?
+grep -qF "bench watch $t40r" <<<"$rv40"; report "t40 receipt names 'watch' next command" $?
+# The two follow-up commands are the receipt's closing lines (nav_wave_spec §3.1).
+tail2=$(printf '%s\n' "$rv40" | tail -n2)
+{ grep -qF -- "--tui" <<<"$tail2" && grep -qF "bench watch $t40r" <<<"$tail2"; }
+report "t40 receipt ENDS with the --tui + watch commands" $?
+# review leaves task state untouched.
+rc=0; [ "$(task_status "$t40r")" = review ] || rc=1
+report "t40 review leaves status unchanged" "$rc" "status=$(task_status "$t40r")"
+
+# --- t40b: review --tui opens lazygit on demand (as far as headless allows). ---
+tui40=$(bench review "$t40r" --tui 2>&1); report "t40 review --tui exits 0" $?
+if command -v lazygit >/dev/null 2>&1; then
+  rc=0; tmuxs list-panes -t "=$SESS:deck" -F '#{@bench_role}' 2>/dev/null | grep -qx review || rc=1
+  report "t40 review --tui opens a lazygit pane in the deck (@bench_role=review)" "$rc"
+else
+  grep -qi 'lazygit not installed' <<<"$tui40"
+  report "t40 review --tui degrades cleanly when lazygit is absent" $?
+fi
+# unknown flag is rejected with a usage hint.
+bench review "$t40r" --bogus >/dev/null 2>&1; rc=$?
+rc2=0; [ "$rc" -ne 0 ] || rc2=1; report "t40 review rejects an unknown flag" "$rc2"
+
+# --- t40c: chip trust — orange RESERVED for confirmed '!'; bare silence '?' renders dim. ---
+export BENCH_SILENCE_SECS=2                                # trip monitor-silence fast (as in t28)
+# Confirmed prompt → orange '!'.
+mk_task "t40-confirm"; t40c=$NEWID
+bench task set "$t40c" mockmode prompt >/dev/null 2>&1
+bench spawn "$t40c" >/dev/null 2>&1
+for _ in $(seq 1 30); do
+  ni=$(bench status --json 2>/dev/null | jq -r --arg id "$t40c" '.[]|select(.id==$id)|.needs_input' 2>/dev/null)
+  [ "$ni" = true ] && break; sleep 0.5
+done
+# Bare silence (idle worker, no prompt signature) → dim '?'.
+mk_task "t40-silent"; t40s=$NEWID
+bench task set "$t40s" mockmode idle >/dev/null 2>&1
+bench spawn "$t40s" >/dev/null 2>&1
+for _ in $(seq 1 30); do
+  ni=$(bench status --json 2>/dev/null | jq -r --arg id "$t40s" '.[]|select(.id==$id)|.needs_input' 2>/dev/null)
+  [ "$ni" = true ] && break; sleep 0.5
+done
+tm40=$(bench status --tmux 2>/dev/null)
+# Confirmed '!' chip: orange (colour208). This is the ONLY thing orange is spent on now.
+rc=0; grep -qE "colour208]$t40c !" <<<"$tm40" || rc=1
+report "t40 confirmed '!' chip renders orange (colour208)" "$rc" "line=[$(grep -oE "colour208]$t40c [^#]*" <<<"$tm40")]"
+# Bare-silence '?' chip: renders, but NOT orange (dim demotion — assert on the format string).
+qchip=$(grep -oE "fg=[a-z0-9]+]$t40s \?[a-z]*" <<<"$tm40")
+rc=0; [ -n "$qchip" ] || rc=1
+report "t40 bare-silence chip renders the '?' glyph" "$rc" "chip=[$qchip]"
+rc=0; grep -q colour208 <<<"$qchip" && rc=1
+report "t40 bare-silence '?' chip is NOT orange (trust demotion)" "$rc" "chip=[$qchip]"
+unset BENCH_SILENCE_SECS
+
 # ═══ end t40 ═══
 
 # ---- summary ----

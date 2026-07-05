@@ -222,8 +222,15 @@ cmd_status() {
     for f in ${files[@]+"${files[@]}"}; do
       _st_load "$f"
       if [ "$needs_input" = true ]; then
-        col=colour208                       # orange: needs you (silence ? / confirmed !)
-        [ "$needs_input_confirmed" = true ] && glyph='!' || glyph='?'
+        # Trust demotion (nav_wave_spec §3.2): orange is RESERVED for a signature-confirmed
+        # prompt (`!`). Bare silence (`?`) is real but unconfirmed — render it dim so it is
+        # visible if you look, never shouting. Detection (needs_input/_confirmed) is unchanged;
+        # only the colour mapping moves. Orange must stay a signal the user can trust.
+        if [ "$needs_input_confirmed" = true ]; then
+          col=colour208; glyph='!'          # orange: confirmed — a worker is waiting on you
+        else
+          col=colour244; glyph='?'          # dim: bare silence, unconfirmed
+        fi
       else
         case "$status" in
           working) col=green;     [ "$ascii" = 1 ] && glyph='*' || glyph='●' ;;
