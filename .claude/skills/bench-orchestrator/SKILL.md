@@ -36,6 +36,7 @@ Run these; do not reimplement them. Task ids accept `42`, `T-42`, or `T-042`.
 | `bench pop <id>` | Remove a worker's crew tile; the session keeps running headless. |
 | `bench panel` | fzf task palette (Alt+g): Enter=open worker session, ctrl-w=watch, ctrl-o=peek. |
 | `bench menu <id>` | Per-task context menu (jump/watch/peek/nudge/review/pop-embed). Mouse paths: right-click a crew tile or status chip, click a tile's [≡]; keyboard: prefix+m on a focused tile. |
+| `bench focus <id>` | THE way into a worker: zoom its crew tile (embeds if missing) — never switch-client into the bar-less worker session (strands the user). Chip left-click and the menu Jump route here. |
 | `bench board [--watch]` | Relayout crew from status: embed missing tiles, pop merged/dead, promote `!`/review to the main pane. Transition-gated; never touches the active/zoomed pane. |
 | `bench peek <id> [-n 30]` | Tail a worker's pane — human eyes only, never state. |
 | `bench review <id> [--tui]` | Diffstat + expected-files check + receipt — opens NOTHING by default; `--tui` opens lazygit on demand (the only thing that ever occupies the deck's right side). |
