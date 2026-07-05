@@ -31,7 +31,10 @@ Run these; do not reimplement them. Task ids accept `42`, `T-42`, or `T-042`.
 | `bench status --tree` | Session tree (workbench → cores → workers); the contract UIs render. |
 | `bench status --stale` | Flag workers idle 20 min (no commit AND no file update). |
 | `bench status --refresh-titles` | Retitle live worker panes `T-0xx · <status>`. |
-| `bench watch <id>` | Point the deck diff pane at a task's worktree (live diff). |
+| `bench watch <id> [--tui]` | Deck diff pane: FULL task diff vs base (committed+uncommitted). `--tui` = diffpane (uncommitted only). |
+| `bench embed <id>\|--all` | Tile live worker session(s) into crew as interactive views (closing a tile never kills). |
+| `bench pop <id>` | Remove a worker's crew tile; the session keeps running headless. |
+| `bench panel` | fzf task palette (Alt+g): Enter=open worker session, ctrl-w=watch, ctrl-o=peek. |
 | `bench peek <id> [-n 30]` | Tail a worker's pane — human eyes only, never state. |
 | `bench review <id>` | Diffstat + expected-files check + open lazygit on the branch. |
 | `bench done <id> [--yes]` | Squash-merge into base, archive, remove worktree. **Human-approved only.** |

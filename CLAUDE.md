@@ -28,7 +28,9 @@ command; mutating verbs print receipts of what they did.
 
 ## Tests
 
-`tests/run.sh` — one harness, extend it (TAP-ish, currently 171 assertions, ~25s).
+`tests/run.sh` — one harness, extend it (TAP-ish, currently 183 assertions, ~30s).
+Post-shakedown state + open threads: `docs/handoff-2026-07-05.md` — read it before
+new bench work.
 Lint: `shellcheck -s bash bin/bench lib/*.sh` (run from the repo root so sourced
 files resolve). Both must be green before any commit.
 
