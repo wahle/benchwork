@@ -28,6 +28,11 @@ export PATH="$REPO/bin:$PATH"
 # bare env; give bench's own commits (run in this process) an identity too.
 export GIT_AUTHOR_NAME=bench-test GIT_AUTHOR_EMAIL=test@bench.test
 export GIT_COMMITTER_NAME=bench-test GIT_COMMITTER_EMAIL=test@bench.test
+# Worker sessions export BENCH_PROJECT/TASKFILE/TASK_ID/PORT for their own claude;
+# run from inside one, they leak in and override the harness's fixture resolution
+# (29 false failures — found independently by two nav-wave workers). Shed them, plus
+# the tuning knobs individual tests set locally when they need them.
+unset BENCH_PROJECT BENCH_TASKFILE BENCH_TASK_ID BENCH_PORT BENCH_SILENCE_SECS BENCH_STALE_SECS
 
 FIX="$WORK/fixture"
 
@@ -597,8 +602,11 @@ report "t25 no surface warning emitted without an Expected files section" "$rc" 
 # --- t26: bench.tmux.conf parses clean on a THROWAWAY server (own socket) ---
 # Must use `command tmux` (not btmux/tmuxs — those are the harness socket) with a
 # private `conflint$$` server so a config parse error can't taint the test run; the
-# EXIT trap also kills this server. `start-server \; kill-server` loads + tears down.
-conflint_err=$(command tmux -f "$REPO/bench.tmux.conf" -L "conflint$$" start-server \; kill-server 2>&1 >/dev/null)
+# EXIT trap also kills this server. `source-file` is the authoritative check:
+# `tmux -f <conf> start-server` returns rc=0 with EMPTY stderr even for a broken
+# conf (nav wave T-002's first broken binding sailed through the old pattern);
+# source-file reports parse errors with a real rc and message.
+conflint_err=$(command tmux -L "conflint$$" -f /dev/null start-server \; source-file "$REPO/bench.tmux.conf" \; kill-server 2>&1 >/dev/null)
 conflint_rc=$?
 rc=0; { [ "$conflint_rc" -eq 0 ] && [ -z "$conflint_err" ]; } || rc=1
 report "t26 bench.tmux.conf parses clean (exit 0, empty stderr)" "$rc" "rc=$conflint_rc stderr=[$conflint_err]"

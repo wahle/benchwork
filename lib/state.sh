@@ -78,12 +78,14 @@ cmd_task_set() {
 _st_esc() { local s=$1; s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\t'/\\t}; s=${s//$'\r'/\\r}; printf '%s' "$s" | tr -d '\000-\010\013\014\016-\037'; }
 
 # _st_prompt_signature <session> — 0 if the worker pane tail looks like a permission prompt
-# (spec §5 layer 3, advisory: upgrades a silence hint's confidence, never drives state).
+# (spec §5 layer 3, advisory — never drives state). Runs UNCONDITIONALLY now (see _st_load),
+# so the signature must be prompt-dialog text only: a bare `❯` or numbered line would match
+# Claude Code's idle input box and cry wolf on every healthy worker.
 _st_prompt_signature() {
   local tail
   tail=$(btmux capture-pane -p -t "=$1:" 2>/dev/null | tail -n 15) || return 1
   [ -n "$tail" ] || return 1
-  printf '%s\n' "$tail" | grep -Eq 'Do you want|❯|^[[:space:]]*[0-9]+[.)]'
+  printf '%s\n' "$tail" | grep -Eq 'Do you want|Do you trust|Esc to cancel|Esc to exit'
 }
 
 # _st_transcript_hint <worktree> — 0 if Claude Code's newest transcript for that cwd ends in an
@@ -125,20 +127,25 @@ _st_load() {
   session="bench-$(tmux_safe "$(project_name)")-$id"
   alive=false; if btmux has-session -t "=$session" 2>/dev/null; then alive=true; fi
 
-  # needs-input (spec §5, ALL advisory — chips/json only, NEVER a state transition):
-  # working AND alive AND the window's silence flag is set AND no fresh commit within the window.
+  # needs-input (spec §5, ALL advisory — chips/json only, NEVER a state transition).
+  # Signature FIRST (post-nav-wave fix): the silence flag can never latch while crew
+  # tiles keep every worker window "viewed", so a visible prompt signature alone now
+  # confirms `!` with no silence prerequisite — and it self-clears the moment the
+  # prompt is answered. Silence stays as the weak, unconfirmed `?` path.
   needs_input=false; needs_input_confirmed=false
   if [ "$status" = working ] && [ "$alive" = true ]; then
-    silence_secs=${BENCH_SILENCE_SECS:-60}
-    fresh=false
-    [ -n "$last_commit" ] && [ $((now-last_commit)) -le "$silence_secs" ] && fresh=true
-    sflag=$(btmux display-message -p -t "=$session:" '#{window_silence_flag}' 2>/dev/null || true)
-    if [ "$sflag" = 1 ] && [ "$fresh" = false ]; then
-      needs_input=true
-      # Confidence upgrade (layer 3 + 2.5), evaluated ONLY once the silence gate has fired.
-      if _st_prompt_signature "$session"; then needs_input_confirmed=true; fi
-      if [ "${BENCH_TRANSCRIPT_HINTS:-}" = 1 ] && _st_transcript_hint "$worktree"; then
-        needs_input_confirmed=true
+    if _st_prompt_signature "$session"; then
+      needs_input=true; needs_input_confirmed=true
+    else
+      silence_secs=${BENCH_SILENCE_SECS:-60}
+      fresh=false
+      [ -n "$last_commit" ] && [ $((now-last_commit)) -le "$silence_secs" ] && fresh=true
+      sflag=$(btmux display-message -p -t "=$session:" '#{window_silence_flag}' 2>/dev/null || true)
+      if [ "$sflag" = 1 ] && [ "$fresh" = false ]; then
+        needs_input=true
+        if [ "${BENCH_TRANSCRIPT_HINTS:-}" = 1 ] && _st_transcript_hint "$worktree"; then
+          needs_input_confirmed=true
+        fi
       fi
     fi
   fi

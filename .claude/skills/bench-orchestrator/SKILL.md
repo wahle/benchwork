@@ -35,8 +35,10 @@ Run these; do not reimplement them. Task ids accept `42`, `T-42`, or `T-042`.
 | `bench embed <id>\|--all` | Tile live worker session(s) into crew as interactive views (closing a tile never kills). |
 | `bench pop <id>` | Remove a worker's crew tile; the session keeps running headless. |
 | `bench panel` | fzf task palette (Alt+g): Enter=open worker session, ctrl-w=watch, ctrl-o=peek. |
+| `bench menu <id>` | Per-task context menu (jump/watch/peek/nudge/review/pop-embed). Mouse paths: right-click a crew tile or status chip, click a tile's [≡]; keyboard: prefix+m on a focused tile. |
+| `bench board [--watch]` | Relayout crew from status: embed missing tiles, pop merged/dead, promote `!`/review to the main pane. Transition-gated; never touches the active/zoomed pane. |
 | `bench peek <id> [-n 30]` | Tail a worker's pane — human eyes only, never state. |
-| `bench review <id>` | Diffstat + expected-files check + open lazygit on the branch. |
+| `bench review <id> [--tui]` | Diffstat + expected-files check + receipt — opens NOTHING by default; `--tui` opens lazygit on demand (the only thing that ever occupies the deck's right side). |
 | `bench done <id> [--yes]` | Squash-merge into base, archive, remove worktree. **Human-approved only.** |
 | `bench abandon <id>` | Archive as abandoned, remove worktree, keep the branch (salvage). |
 | `bench nudge <id> "text"` | Type a line into the worker's pane (answer a prompt, tell it to rebase). |
@@ -94,9 +96,10 @@ in-tree plus `Read(~/.bench/**)` (docs/nav_wave_spec.md §5). If a prompt still
 appears, that is a config gap: peek, REPORT it to the human, and wait. **Never
 answer any prompt — not even a bare-Enter trust acceptance** (user rule,
 2026-07-05). Both pre-grants are applied by the human, never by an agent.
-One behavior to expect: once flagged, orange clears on the worker's next
-**commit**, not on mere output — a worker that resumed but hasn't committed
-yet may stay orange a while; peek before assuming it's stuck.
+Detection is signature-first (post-nav-wave): a visible prompt dialog in the
+pane makes the chip orange `!` immediately and it self-clears when answered —
+no silence prerequisite (crew tiles keep windows "viewed", so silence rarely
+latches). A dim `?` is the weak silence-only hint; peek before acting on it.
 
 ## Practical notes
 
