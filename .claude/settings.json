@@ -1,1 +1,1 @@
-{"permissions":{"allow":["Bash(git add:*)","Bash(git commit:*)","Bash(bench task set:*)","Bash(npm test:*)","Bash(tsc:*)","Bash(git status:*)","Bash(git diff:*)","Bash(git log:*)","Bash(cat:*)"]}}
+{"permissions":{"allow":["Bash(git add:*)","Bash(git commit:*)","Bash(bench task set:*)","Bash(npm test:*)","Bash(tsc:*)","Bash(git status:*)","Bash(git diff:*)","Bash(git log:*)","Bash(cat:*)","Read(./**)","Edit(./**)","Write(./**)","Read(~/.bench/**)"]}}
