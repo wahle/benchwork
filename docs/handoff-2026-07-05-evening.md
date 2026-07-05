@@ -24,13 +24,14 @@ costs are explicitly off the table.
   `bench board` + one-line callouts. Trialed briefly; the session got reset by
   accident mid-trial — no verdict on whether it earns its tokens.
 
-## Parked, validated, NOT merged (human never said merge)
+## UPDATE (same evening): user said "commit and merge our current state"
 
-- **T-005** doctor nav-layer checks — rebased onto main, 246/246, shellcheck
-  green, scope exact. `bench done T-005 --yes` when/if approved.
-- **T-006** mouse cheatsheet + README nav section — content approved after one
-  accuracy bounce (commit 65ac7a3). `bench done T-006 --yes` when/if approved.
-- Worker sessions may be parked in review; killable or `bench resume`-able.
+Both merged (T-005 → 1ce6570, T-006 → d450cc3), plus `status-position top`
+committed to the conf (354b6fa — the WT bottom-row clip fix, user-verified),
+skill verb table synced with `focus`, cheatsheet's chip-click row corrected
+for focus semantics (f7f1382). Main is green at 246/246, wall is clear,
+workbench tidy. The continuation question above STILL STANDS — merging was
+housekeeping, not a decision to continue.
 
 ## What bit the user today (why they're doubting the project)
 
