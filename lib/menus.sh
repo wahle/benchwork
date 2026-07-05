@@ -83,10 +83,11 @@ cmd_menu() {
   fi
 
   # Menu-entry commands. Formats expand at selection time; the task id and worker session
-  # are baked as literals (both are tmux-safe). Jump runs in the menu's own client, so no
-  # socket/client pinning is needed; the others cd into the project via #{@bench_repo}.
+  # are baked as literals (both are tmux-safe). Jump = `bench focus` (zoomed tile in the
+  # workbench session — NEVER a raw switch-client: worker sessions run bar-less for clean
+  # tiles, so landing in one strands the user with no visible way home, found live).
   local jump_cmd watch_cmd peek_cmd nudge_cmd review_cmd poe_cmd
-  jump_cmd="switch-client -t \"=$wsess\""
+  jump_cmd="run-shell 'cd \"#{@bench_repo}\" && bench focus $id --client \"#{client_name}\"'"
   watch_cmd="run-shell 'cd \"#{@bench_repo}\" && bench watch $id'"
   peek_cmd="display-popup -E 'cd \"#{@bench_repo}\" && bench peek $id -n 40; printf \"\\n[any key to close] \"; read -rn1'"
   review_cmd="display-popup -E 'cd \"#{@bench_repo}\" && bench review $id; printf \"\\n[any key to close] \"; read -rn1'"
@@ -109,4 +110,46 @@ cmd_menu() {
   menu+=("$(_mn_name "$poe_label" e)"       e "$poe_cmd")
 
   btmux "${menu[@]}"
+}
+
+# cmd_focus <id> [--client <name>] — bring a worker front-and-center WITHOUT leaving the
+# workbench session: embed its tile if missing, go to crew, zoom the tile. The status bar
+# (chips, Alt hotkeys, clicks) stays visible throughout — this is the ONLY sanctioned
+# "jump into a worker" path. Raw switch-client into a worker session strands the user:
+# embed keeps worker sessions bar-less for clean tiles, so there is no visible way home
+# (spec §3.1 `focus`, built after the user was trapped exactly this way).
+cmd_focus() {
+  local id="" client=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --client) shift; client=${1:-} ;;
+      -*)       die "focus: unknown flag: $1 — usage: bench focus <id>" ;;
+      *)        [ -n "$id" ] || id=$1 ;;
+    esac
+    shift
+  done
+  [ -n "$id" ] || die "focus: which task? — usage: bench focus <id>"
+  id=$(norm_id "$id")
+  require_task "$id" >/dev/null
+  local proj sess wsess pane
+  proj=$(project_name); sess=$(tmux_safe "$proj"); wsess=$(worker_session "$id")
+  btmux has-session -t "=$sess" 2>/dev/null || die "no workbench session '$sess' — run 'bench up' first"
+  btmux has-session -t "=$wsess" 2>/dev/null \
+    || die "$id has no live worker session — 'bench spawn $id' to launch it, or 'bench resume $id' if it died"
+  pane=$(_tx_view_pane "$sess" "$wsess")
+  if [ -z "$pane" ]; then
+    (cmd_embed "$id") >/dev/null 2>&1 || true
+    pane=$(_tx_view_pane "$sess" "$wsess")
+  fi
+  [ -n "$pane" ] || die "focus: could not embed a tile for $id — run 'bench embed $id' and check the crew window"
+  # Unzoom first if crew is zoomed on some other tile; then focus ours and zoom it.
+  if [ "$(btmux display-message -p -t "=$sess:crew" '#{window_zoomed_flag}' 2>/dev/null)" = 1 ]; then
+    btmux resize-pane -t "=$sess:crew" -Z
+  fi
+  btmux select-window -t "=$sess:crew"
+  btmux select-pane -t "$pane"
+  btmux resize-pane -t "$pane" -Z
+  # A client elsewhere (e.g. clicked a chip from another session) gets carried along.
+  [ -n "$client" ] && btmux switch-client -c "$client" -t "=$sess" 2>/dev/null
+  echo "focused $id (zoomed tile) — double-click or Alt+z to return to the wall"
 }

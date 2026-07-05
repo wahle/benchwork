@@ -25,6 +25,7 @@ bench <verb> — a talk-driven agent workbench on tmux + git
   peek <id> [-n 30]             tail of the worker's pane (human eyes only)
   panel                         fzf task palette (Alt+g): jump/watch/peek
   menu <id>|--from-pane <p>     context menu for a task (mouse + keyboard paths)
+  focus <id>                    zoom a worker's crew tile (the way INTO a worker)
   board [--watch]               relayout crew tiles from task status
   review <id>                   diffstat + expected-files check (+ lazygit pane)
   done <id> [--yes]             squash-merge into base, archive, remove worktree
@@ -49,6 +50,7 @@ case "$verb" in
   peek)   cmd_peek "$@" ;;
   panel)  cmd_panel "$@" ;;
   menu)   cmd_menu "$@" ;;
+  focus)  cmd_focus "$@" ;;
   board)  cmd_board "$@" ;;
   doctor) cmd_doctor "$@" ;;
   clean)  cmd_clean "$@" ;;
