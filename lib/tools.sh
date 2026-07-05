@@ -36,11 +36,12 @@ cmd_peek() {
   btmux has-session -t "=$sess" 2>/dev/null \
     || die "$id has no running worker session ($sess) — 'bench resume $id' to relaunch it, then peek again"
 
-  # capture-pane -S - is the whole scrollback; tail to N, then trim trailing blank lines so a
-  # mostly-empty pane doesn't print a screenful of whitespace under the header.
+  # capture-pane -S - is the whole scrollback. Trim trailing blank lines BEFORE tailing:
+  # a repainting TUI (claude's) leaves a wall of blank rows at the END of its history, so
+  # tail-then-trim returns nothing exactly when there's something to see (found live, wave 1).
   local out
-  out=$(btmux capture-pane -p -S - -t "=$sess:" 2>/dev/null | tail -n "$n" \
-        | sed -e :a -e '/^[[:space:]]*$/{ $d; N; ba }') || true
+  out=$(btmux capture-pane -p -S - -t "=$sess:" 2>/dev/null \
+        | sed -e :a -e '/^[[:space:]]*$/{ $d; N; ba }' | tail -n "$n") || true
   printf '── %s · %s — last %s lines ──\n' "$id" "$sess" "$n"
   [ -n "$out" ] && printf '%s\n' "$out"
   return 0
