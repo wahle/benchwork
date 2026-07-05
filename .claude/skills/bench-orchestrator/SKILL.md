@@ -87,11 +87,16 @@ flagged: `bench peek <id>` to see the pane, then `bench nudge <id> "…"` to
 answer (or click into the pane). Do not branch automation on it or treat it as a
 status transition; if the signal is wrong, the worst case is a missing hint.
 
-Two behaviors to expect (observed live): a FRESH worker always parks on Claude
-Code's folder-trust prompt first — watch for the orange chip after spawn and
-`bench nudge <id> ""` (a bare Enter) to accept. And once flagged, orange clears
-on the worker's next **commit**, not on mere output — a worker that resumed but
-hasn't committed yet may stay orange a while; peek before assuming it's stuck.
+Fresh workers must NOT park on prompts at all: the project repo is pre-trusted
+(`hasTrustDialogAccepted` under the repo root in `~/.claude.json` — covers its
+worktrees) and the committed `.claude/settings.json` pre-grants Read/Edit/Write
+in-tree plus `Read(~/.bench/**)` (docs/nav_wave_spec.md §5). If a prompt still
+appears, that is a config gap: peek, REPORT it to the human, and wait. **Never
+answer any prompt — not even a bare-Enter trust acceptance** (user rule,
+2026-07-05). Both pre-grants are applied by the human, never by an agent.
+One behavior to expect: once flagged, orange clears on the worker's next
+**commit**, not on mere output — a worker that resumed but hasn't committed
+yet may stay orange a while; peek before assuming it's stuck.
 
 ## Practical notes
 

@@ -7,6 +7,8 @@ BENCH_ROOT=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 . "$BENCH_ROOT/lib/tmuxops.sh"
 . "$BENCH_ROOT/lib/review.sh"
 . "$BENCH_ROOT/lib/tools.sh"
+. "$BENCH_ROOT/lib/menus.sh"
+. "$BENCH_ROOT/lib/board.sh"
 
 usage() {
   cat <<'EOF'
@@ -22,6 +24,8 @@ bench <verb> — a talk-driven agent workbench on tmux + git
   pop <id>                      remove a worker's crew tile (session keeps running)
   peek <id> [-n 30]             tail of the worker's pane (human eyes only)
   panel                         fzf task palette (Alt+g): jump/watch/peek
+  menu <id>|--from-pane <p>     context menu for a task (mouse + keyboard paths)
+  board [--watch]               relayout crew tiles from task status
   review <id>                   diffstat + expected-files check (+ lazygit pane)
   done <id> [--yes]             squash-merge into base, archive, remove worktree
   abandon <id>                  archive as abandoned, remove worktree, keep branch
@@ -44,6 +48,8 @@ case "$verb" in
   pop)    cmd_pop "$@" ;;
   peek)   cmd_peek "$@" ;;
   panel)  cmd_panel "$@" ;;
+  menu)   cmd_menu "$@" ;;
+  board)  cmd_board "$@" ;;
   doctor) cmd_doctor "$@" ;;
   clean)  cmd_clean "$@" ;;
   review) cmd_review "$@" ;;

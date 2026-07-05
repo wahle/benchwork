@@ -845,6 +845,21 @@ mk_task "never-embed"; neid=$NEWID
 bench embed "$neid" >/dev/null 2>&1; rc=$?
 rc2=0; [ "$rc" -ne 0 ] || rc2=1; report "t37 embed on a never-spawned task dies with spawn/resume hint" "$rc2"
 
+# ═══ t38 RESERVED — nav wave T-A: menu verb + conf bindings (docs/nav_wave_spec.md §1.3).
+# Only T-A edits between these markers. ═══
+
+# ═══ end t38 ═══
+
+# ═══ t39 RESERVED — nav wave T-B: board pass + safety rules (docs/nav_wave_spec.md §2.3).
+# Only T-B edits between these markers. ═══
+
+# ═══ end t39 ═══
+
+# ═══ t40 RESERVED — nav wave T-C: review on demand + chip trust (docs/nav_wave_spec.md §3.3).
+# Only T-C edits between these markers. ═══
+
+# ═══ end t40 ═══
+
 # ---- summary ----
 printf '1..%d\n' "$TESTNUM"
 printf '# passed %d, failed %d\n' "$((TESTNUM - FAILS))" "$FAILS"
